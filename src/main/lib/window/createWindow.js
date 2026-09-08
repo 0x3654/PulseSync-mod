@@ -66,6 +66,12 @@ const createWindow = async () => {
         },
     });
     window.isMainWindow = true;
+    // macOS: кнопка мини-плеера в шапке — без подсветки-рельефа при наведении (как пин)
+    if (process.platform === 'darwin') {
+        window.webContents.on('did-finish-load', () => {
+            window.webContents.insertCSS('.TitleBar_button:hover { background-color: transparent !important; }');
+        });
+    }
     window.once('ready-to-show', () => {
         const shouldShow = !(store_js_1.getModSettings()?.window?.minimizedStart ?? false);
 
