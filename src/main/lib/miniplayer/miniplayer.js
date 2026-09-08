@@ -73,7 +73,10 @@ class MiniPlayer {
             minHeight: 200,
             ...(position?.x && position?.y ? { x: position.x, y: position.y } : { center: true }),
             backgroundColor: backgroundColor,
-            frame: false,
+            // macOS: нативный светофор (hiddenInset), Windows/Linux — безрамочное окно
+            ...(process.platform === 'darwin'
+                ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 10 }, maximizable: false, fullscreenable: false }
+                : { frame: false }),
             resizable: true,
             minimizable: false,
             webPreferences: {

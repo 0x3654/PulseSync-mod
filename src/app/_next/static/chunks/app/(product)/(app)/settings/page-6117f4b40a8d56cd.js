@@ -3714,18 +3714,20 @@
                                     className: eb().item,
                                     children: (0, pulseJsxRuntime.jsx)(em, {
                                         title: 'Кнопки в превью панели задач',
-                                        description: 'Добавляет поддержку расширений панели задач.',
+                                        description: 'Добавляет поддержку расширений панели задач (Windows)',
                                         onChange: onTaskBarToggle,
                                         isChecked: window.nativeSettings.getAsync('modSettings.taskBarExtensions.enable'),
+                                        disabled: navigator.userAgent.includes('Macintosh'),
                                     }),
                                 }),
                                 (0, pulseJsxRuntime.jsx)('li', {
                                     className: eb().item,
                                     children: (0, pulseJsxRuntime.jsx)(em, {
                                         title: 'Использовать обложку трека в превью окна',
-                                        description: 'Если трек играет, заменяет динамичное превью на картинку обложки трека',
+                                        description: 'Если трек играет, заменяет динамичное превью на картинку обложки трека (Windows)',
                                         onChange: onTaskbarExtensionsCoverAsThumbnailToggle,
                                         isChecked: window.nativeSettings.getAsync('modSettings.taskBarExtensions.coverAsThumbnail'),
+                                        disabled: navigator.userAgent.includes('Macintosh'),
                                     }),
                                 }),
                             ],
@@ -3791,9 +3793,10 @@
                                     className: eb().item,
                                     children: (0, pulseJsxRuntime.jsx)(em, {
                                         title: 'Не отображать окно в таскбаре',
-                                        description: 'Работает только если миниплеер закреплён поверх других окон',
+                                        description: 'Работает только если миниплеер закреплён поверх других окон (Windows)',
                                         onChange: onSkipTaskbarToggle,
                                         isChecked: window.nativeSettings.getAsync('modSettings.miniplayer.skipTaskbar'),
+                                        disabled: navigator.userAgent.includes('Macintosh'),
                                     }),
                                 }),
                                 (0, pulseJsxRuntime.jsx)('li', {
