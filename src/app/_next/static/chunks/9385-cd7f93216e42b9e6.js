@@ -10646,10 +10646,9 @@
                             e.syncLyrics.setInvisible();
                         },
                         autoHideSyncLyrics(trackId) {
-                            if (e.mode === nM.u.SYNC_LYRICS) {
-                                e.shouldRestoreSyncLyrics = !0;
-                                e.lastAutoHiddenSyncTrackId = trackId == null ? null : String(trackId);
-                            }
+                            if (e.mode !== nM.u.SYNC_LYRICS) return;
+                            e.shouldRestoreSyncLyrics = !0;
+                            e.lastAutoHiddenSyncTrackId = trackId == null ? null : String(trackId);
                             e.mode = null;
                             e.syncLyrics.setInvisible();
                         },
