@@ -14154,6 +14154,7 @@
                         userCollectionHue: e.userCollectionHue,
                         isChildModeEnabled: !!e.childModEnabled,
                         userMusicVisibility: null != (a = null == (t = e.userMusicVisibility) ? void 0 : t.toLowerCase()) ? a : gX.L.PUBLIC,
+                        aiContentReductionEnabled: !!e.aiContentReductionEnabled,
                     });
                 },
                 g$ = f.gK.model({
@@ -14176,6 +14177,7 @@
                         userCollectionHue: f.gK.maybe(f.gK.number),
                         isChildModeEnabled: f.gK.optional(f.gK.boolean, !1),
                         userMusicVisibility: f.gK.optional(f.gK.string, gX.L.PUBLIC),
+                        aiContentReductionEnabled: f.gK.optional(f.gK.boolean, !1),
                     }),
                     V.X,
                 ),
@@ -14257,17 +14259,24 @@
                                 }
                         }),
                         setSettings: (0, f.L3)(function* (t) {
-                            let { isChildModeEnabled: a, userMusicVisibility: i } = t,
-                                { accountResource: l, modelActionsLogger: r } = (0, f._$)(e);
+                            let { isChildModeEnabled: a, userMusicVisibility: i, aiContentReductionEnabled: l } = t,
+                                { accountResource: r, modelActionsLogger: s } = (0, f._$)(e),
+                                n = e.settings.aiContentReductionEnabled;
                             try {
                                 let t = {};
                                 'boolean' == typeof a && ((t.childModEnabled = a), (e.settings.isChildModeEnabled = a)),
-                                    i && ((t.userMusicVisibility = i), (e.settings.userMusicVisibility = i));
-                                let r = yield l.settings(t);
-                                if (((e.settings = gY(r)), r.childModEnabled !== a)) return aV.F.ERROR;
+                                    i && ((t.userMusicVisibility = i), (e.settings.userMusicVisibility = i)),
+                                    'boolean' == typeof l && ((t.aiContentReductionEnabled = l), (e.settings.aiContentReductionEnabled = l));
+                                let s = yield r.settings(t);
+                                if (
+                                    ((e.settings = gY(s)),
+                                    ('boolean' == typeof a && s.childModEnabled !== a) ||
+                                        ('boolean' == typeof l && s.aiContentReductionEnabled !== l))
+                                )
+                                    return aV.F.ERROR;
                                 return aV.F.OK;
-                            } catch (e) {
-                                return r.error(e), aV.F.ERROR;
+                            } catch (t) {
+                                return 'boolean' == typeof l && (e.settings.aiContentReductionEnabled = n), s.error(t), aV.F.ERROR;
                             }
                         }),
                         setUnauthorized: () => {

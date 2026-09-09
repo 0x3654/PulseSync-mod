@@ -661,6 +661,7 @@
                                 searchParams: (0, n.P)({
                                     childModEnabled: null == t ? void 0 : t.childModEnabled,
                                     userMusicVisibility: null == t ? void 0 : t.userMusicVisibility,
+                                    aiContentReductionEnabled: null == t ? void 0 : t.aiContentReductionEnabled,
                                 }),
                             }),
                         )

@@ -191,6 +191,7 @@
                     (e.WebNextWaveForTwo = 'WebNextWaveForTwo'),
                     (e.WebNextWaveForTwoTest = 'WebNextWaveForTwoTest'),
                     (e.WebNextLandingSdk = 'WebNextLandingSdk'),
+                    (e.WebNextAIContentReductionSetting = 'WebNextAIContentReductionSetting'),
                     e
                 );
             })({});

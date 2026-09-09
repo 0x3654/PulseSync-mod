@@ -1237,6 +1237,10 @@
                 n = s(16436),
                 o = s(31322);
             class r extends o.X {
+                createSessionRequestHeaders(t) {
+                    let e = this.createRequestHeaders({ params: t });
+                    return t.aiContentReductionEnabled && (e['X-Yandex-Music-AI-Content-Rate'] = 'reduced'), e;
+                }
                 async getStationInfo(t, e) {
                     return (
                         await this.httpClient.get(
@@ -1267,7 +1271,13 @@
                     return (
                         await this.httpClient.post(
                             'rotor/session/new',
-                            this.createHttpOptions({ timeoutKey: 'sessionNew', params: t, json: a, signal: null == e ? void 0 : e.signal }),
+                            this.createHttpOptions({
+                                timeoutKey: 'sessionNew',
+                                params: t,
+                                headers: this.createSessionRequestHeaders(t),
+                                json: a,
+                                signal: null == e ? void 0 : e.signal,
+                            }),
                         )
                     ).json();
                 }
@@ -1292,7 +1302,13 @@
                     return (
                         await this.httpClient.post(
                             'rotor/session/'.concat(t.radioSessionId, '/clone'),
-                            this.createHttpOptions({ timeoutKey: 'sessionClone', params: t, json: a, signal: null == e ? void 0 : e.signal }),
+                            this.createHttpOptions({
+                                timeoutKey: 'sessionClone',
+                                params: t,
+                                headers: this.createSessionRequestHeaders(t),
+                                json: a,
+                                signal: null == e ? void 0 : e.signal,
+                            }),
                         )
                     ).json();
                 }
@@ -1301,7 +1317,13 @@
                     return (
                         await this.httpClient.post(
                             'rotor/session/'.concat(t.radioSessionId, '/tracks'),
-                            this.createHttpOptions({ timeoutKey: 'sessionTracks', params: t, json: s, signal: null == e ? void 0 : e.signal }),
+                            this.createHttpOptions({
+                                timeoutKey: 'sessionTracks',
+                                params: t,
+                                headers: this.createSessionRequestHeaders(t),
+                                json: s,
+                                signal: null == e ? void 0 : e.signal,
+                            }),
                         )
                     ).json();
                 }

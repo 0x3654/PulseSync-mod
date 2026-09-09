@@ -6165,6 +6165,10 @@
                 return s;
             }
             class eD {
+                get aiContentReductionRequestParams() {
+                    var e;
+                    return null == (e = this.variables) || !e.aiContentReductionEnabled ? {} : { aiContentReductionEnabled: !0 };
+                }
                 applyNewSession(e) {
                     return (
                         (this.contextData.meta.session = e), (this.contextData.meta.id = (0, eR.f)(e.wave.seeds)), this.sessionStore.addActiveSession({ session: e }), e
@@ -6187,6 +6191,7 @@
                     return t
                         ? this.rotorResource
                               .sessionClone({
+                                  ...this.aiContentReductionRequestParams,
                                   includeWaveModel: !0,
                                   radioSessionId: t,
                                   trackToStartFrom: r,
@@ -6206,6 +6211,7 @@
                     let { seeds: t, queue: a, trackToStartFrom: r, includeTracksInResponse: i, allowExplicit: s, interactive: n } = this.contextData;
                     return this.rotorResource
                         .sessionNew({
+                            ...this.aiContentReductionRequestParams,
                             seeds: t,
                             includeWaveModel: !0,
                             trackToStartFrom: r,
@@ -6226,6 +6232,7 @@
                     return this.deferredFeedbacksQueue.prepare().then((e) =>
                         this.rotorResource
                             .sessionNew({
+                                ...this.aiContentReductionRequestParams,
                                 sessions: e.sessionsFeedbacks,
                                 includeTracksInResponse: o,
                                 trackToStartFrom: n,
@@ -6250,6 +6257,7 @@
                         { includeTracksInResponse: r, allowExplicit: i, queue: s } = this.contextData;
                     return this.rotorResource
                         .sessionNew({
+                            ...this.aiContentReductionRequestParams,
                             sessions: a.sessionsFeedbacks,
                             seeds: [ev],
                             queue: null != t ? t : s,
@@ -6296,7 +6304,7 @@
                         var i, s;
                         let n = null == (s = t.sessionsFeedbacks) || null == (i = s[0]) ? void 0 : i.feedbacks;
                         return this.rotorResource
-                            .sessionTracks({ radioSessionId: r, queue: e, feedbacks: n })
+                            .sessionTracks({ ...this.aiContentReductionRequestParams, radioSessionId: r, queue: e, feedbacks: n })
                             .then((e) =>
                                 this.deferredFeedbacksQueue.commit(t).then(() => {
                                     let { batchId: t, sequence: i } = e,
@@ -14296,6 +14304,9 @@
                                             get sendCorrectRotorQueueParam() {
                                                 return c.checkExperiment(iT.z.WebNextCorrectRotorQueueParam, 'on');
                                             },
+                                            get aiContentReductionEnabled() {
+                                                return y.settings.aiContentReductionEnabled;
+                                            },
                                             get enableStoredDeferredFeedbacks() {
                                                 return n;
                                             },
@@ -14313,7 +14324,7 @@
                                 },
                                 entityFactoryParams: { likeStore: h },
                             }));
-                        }, [u, c, h, _, G]),
+                        }, [u, c, h, _, G, y]),
                         es = (0, O.useMemo)(() => si || (si = new tI({ telemetryResource: u.get(iE.LC), ...k.player.telemetry })), [u, k.player.telemetry]),
                         en = (0, O.useMemo)(() => {
                             if (!ee || !ea || !er || !ei) return null;

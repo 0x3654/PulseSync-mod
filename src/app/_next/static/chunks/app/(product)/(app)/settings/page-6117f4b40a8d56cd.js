@@ -5068,6 +5068,7 @@
                     b = (0, pulseSettingsRuntime.gQL)(),
                     j = h.isAvailable && !pulseSettings.isMobile,
                     C = pulseExperiments.checkExperiment(pulseSettingsRuntime.zal.WebNextCrossMediaPlayer, 'on'),
+                    aiContentReductionSettingEnabled = pulseExperiments.checkExperiment(pulseSettingsRuntime.zal.WebNextAIContentReductionSetting, 'on'),
                     y = pulseUser.hasPlus,
                     N = pulseExperiments.checkExperiment(pulseSettingsRuntime.zal.WebNextLiteVersion, 'on') && pulseSettings.isLiteVersionModeAvailableForToggle && !0,
                     S = pulseExperiments.checkExperiment(pulseSettingsRuntime.zal.WebNextCustomThumb, 'on') && !pulseSettings.isMobile,
@@ -5099,6 +5100,15 @@
                         async (e) => {
                             (await pulseUser.setSettings({ isChildModeEnabled: e })) === pulseSettingsRuntime.FlZ.ERROR &&
                                 f((0, pulseJsxRuntime.jsx)(pulseSettingsUi.hT, { error: x({ id: 'settings.failed-to-change-child-mode' }) }), {
+                                    containerId: pulseSettingsRuntime.uQT.ERROR,
+                                });
+                        },
+                        [pulseUser, x, f],
+                    ),
+                    aiContentReductionToggle = (0, pulseReactRuntime.useCallback)(
+                        async (e) => {
+                            (await pulseUser.setSettings({ aiContentReductionEnabled: e })) === pulseSettingsRuntime.FlZ.ERROR &&
+                                f((0, pulseJsxRuntime.jsx)(pulseSettingsUi.hT, { error: x({ id: 'error-messages.error-during-action' }) }), {
                                     containerId: pulseSettingsRuntime.uQT.ERROR,
                                 });
                         },
@@ -5364,6 +5374,18 @@
                         S && (0, pulseJsxRuntime.jsx)('li', { className: eb().item, children: (0, pulseJsxRuntime.jsx)(en, {}) }),
 
                         (0, pulseJsxRuntime.jsx)(settingsCategorySeparator, { text: 'Моя Волна' }),
+
+                        aiContentReductionSettingEnabled &&
+                            (0, pulseJsxRuntime.jsx)('li', {
+                                className: eb().item,
+                                children: (0, pulseJsxRuntime.jsx)(em, {
+                                    title: x({ id: 'settings.ai-content-reduction' }),
+                                    description: x({ id: 'settings.ai-content-reduction-description' }),
+                                    onChange: aiContentReductionToggle,
+                                    isChecked: pulseUser.settings.aiContentReductionEnabled,
+                                    dataTestId: (0, pulseDataTest.Am)(pulseDataTest.e8.settings.SETTINGS_AI_CONTENT_REDUCTION_BUTTON),
+                                }),
+                            }),
 
                         (0, pulseJsxRuntime.jsx)('li', {
                             className: eb().item,
