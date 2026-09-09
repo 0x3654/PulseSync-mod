@@ -50,6 +50,7 @@
             (t.ERROR = 'vibe-animation-worker-error'),
             (t.LOG = 'vibe-animation-worker-log'),
             (t.UPDATE_LAYOUT = 'vibe-animation-worker-update-layout'),
+            (t.UPDATE_RUNTIME_SETTINGS = 'vibe-animation-worker-update-runtime-settings'),
             (t.APPLY_SETTINGS = 'vibe-animation-worker-apply-settings'),
             (t.IDLE_ANIMATION = 'vibe-animation-worker-idle-animation'),
             (t.PLAY_ANIMATION = 'vibe-animation-worker-play-animation'),
@@ -2536,9 +2537,379 @@
         et = (t, e = 0, i = 1) => Math.min(i, Math.max(e, t)),
         it = (t) => t ?? 10,
         st = (t) => ({ h: et(t.h, 0, 360), s: et(t.s, 0, 1), l: et(t.l, 0, 1) }),
-        rt = (t) => (t ? 'vec4' : 'vec3'),
-        nt = (t, e) =>
-            `\nprecision highp float;\n\nuniform vec2 vScreenSize;\nuniform float vTime;\nuniform float vScale;\n\nuniform ${rt(e)} vColorBackground;\n\nuniform vec3 vColor[6];\nuniform vec3 vRotation[3];\n\nuniform float vAudio[3];\nuniform float vReact[3];\n\nuniform vec2 vInteractionPoint;\nuniform float vInteraction;\n\n#define CIRCLE_WIDTH_BASE 0.8\n#define CIRCLE_WIDTH_STEP 0.2\n\n#define SPARK_STRENGTH_BASE 1.0\n#define SPARK_STRENGTH_STEP 0.3\n\n#define CIRCLE_RADIUS_BASE 0.95\n#define CIRCLE_RADIUS_STEP 0.15\n\n#define CIRCLE_OFFSET_BASE 0.0\n#define CIRCLE_OFFSET_STEP 1.57\n\nvec4 permute(vec4 x){return mod(((x*34.0)+1.0)*x, 289.0);}\nvec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}\n\nfloat snoise3(vec3 v) {\n  const vec2 C = vec2(0.1666667, 0.3333333); // vec2(1.0/6.0, 1.0/3.0)\n  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);\n\n  // First corner\n  vec3 i = floor(v + dot(v, C.yyy));\n  vec3 x0 = v - i + dot(i, C.xxx);\n\n  // Other corners\n  vec3 g = step(x0.yzx, x0.xyz);\n  vec3 l = 1.0 - g;\n  vec3 i1 = min(g.xyz, l.zxy);\n  vec3 i2 = max(g.xyz, l.zxy);\n\n  // x0 = x0 - 0. + 0.0 * C\n  vec3 x1 = x0 - i1 + 1.0 * C.xxx;\n  vec3 x2 = x0 - i2 + 2.0 * C.xxx;\n  vec3 x3 = x0 - 1. + 3.0 * C.xxx;\n\n  // Permutations\n  i = mod(i, 289.0);\n  vec4 p = permute( permute( permute(\n             i.z + vec4(0.0, i1.z, i2.z, 1.0 ))\n           + i.y + vec4(0.0, i1.y, i2.y, 1.0 ))\n           + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));\n\n  // Gradients ( N*N points uniformly over a square, mapped onto an octahedron.)\n  // The ring size 17*17 = 289 is close to a multiple of 49 (49*6 = 294)\n  float n_ = 0.142857142857; // 1.0/7.0\n  vec3 ns = n_ * D.wyz - D.xzx;\n\n  vec4 j = p - 49.0 * floor(p * ns.z *ns.z); //  mod(p,N*N), N=7\n\n  vec4 x_ = floor(j * ns.z);\n  vec4 y_ = floor(j - 7.0 * x_); // mod(j,N)\n\n  vec4 x = x_ *ns.x + ns.yyyy;\n  vec4 y = y_ *ns.x + ns.yyyy;\n  vec4 h = 1.0 - abs(x) - abs(y);\n\n  vec4 b0 = vec4( x.xy, y.xy );\n  vec4 b1 = vec4( x.zw, y.zw );\n\n  vec4 s0 = floor(b0)*2.0 + 1.0;\n  vec4 s1 = floor(b1)*2.0 + 1.0;\n  vec4 sh = -step(h, vec4(0.0));\n\n  vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;\n  vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;\n\n  vec3 p0 = vec3(a0.xy,h.x);\n  vec3 p1 = vec3(a0.zw,h.y);\n  vec3 p2 = vec3(a1.xy,h.z);\n  vec3 p3 = vec3(a1.zw,h.w);\n\n  //Normalise gradients\n  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));\n  p0 *= norm.x;\n  p1 *= norm.y;\n  p2 *= norm.z;\n  p3 *= norm.w;\n\n  // Mix final noise value\n  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);\n  m = m * m;\n  return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));\n}\n\nfloat tri(in float x){return abs(fract(x)-.5);}\nvec3 tri3(in vec3 p){return vec3( tri(p.z+tri(p.y*20.)), tri(p.z+tri(p.x*1.)), tri(p.y+tri(p.x*1.)));}\n\nfloat triNoise3D(in vec3 p, in float spd)\n{\n  float z=0.4;\n  float rz = 0.1;\n  vec3 bp = p;\n  for (float i=0.; i<=4.; i++ )\n  {\n    vec3 dg = tri3(bp*0.01); // Increase the scale factor to make noise less frequent\n    p += (dg+vTime*.1*spd);\n\n    bp *= 4.; // Increase the scale factor\n    z *= 0.9;\n    p *= 1.6; // Increase the scale factor\n\n    rz+= (tri(p.z+tri(0.6*p.x+0.1*tri(p.y))))/z;\n  }\n  return smoothstep(0.0, 8., rz + sin(rz + sin(z) * 2.8) * 2.2);\n}\n\nvec2 rotate(vec2 p, float a) {\n  float s = sin(a);\n  float c = cos(a);\n  return vec2(p.x * c - p.y * s, p.x * s + p.y * c);\n}\n\nfloat light(float intensity, float attenuation, float dist) {\n  return intensity / (1.0 + dist + dist * attenuation);\n}\n\nvec4 makeNoiseBlob2(vec2 uv, vec3 color1, vec3 color2, float strength, float offset) {\n  float len = length(uv);\n  float v0, v1, cl;\n  float r0, d0, n0;\n  float r, d;\n\n  n0 = snoise3( vec3(uv * 1.2 + offset, vTime * 0.5 + offset) ) * 0.5 + 0.5;\n  r0 = mix(0.0, 1.0, n0);\n  d0 = distance(uv, r0 / len * uv);\n  v0 = smoothstep(r0 + 0.1 + (sin(vTime + offset) + 1.0), r0, len);\n\n  v1 = light(0.15 * (1.0 + 1.5 * (-sin(vTime * 2. + offset * 0.5) * 0.5)) + 0.3 * strength, 10.0 , d0);\n\n  vec3 col = mix(color1, color2, uv.y * 2.);\n  col = col + v1;\n  col.rgb = clamp(col.rgb, 0.0, 1.0);\n  return vec4(col, v0);\n}\n\nvec4 makeBlob(vec2 uv,\n              float blob,\n              vec3 color1,\n              vec3 color2,\n              float width,\n              float baseReaction,\n              float likeReaction,\n              float audioStrength,\n              float offset,\n              vec2 noiseOffset) {\n  float len = length(uv);\n\n  float outerRadius = blob + width * 0.5 + baseReaction * (1.0 + max(likeReaction, audioStrength * 0.6) * 50. * baseReaction);\n\n  float strength = max(likeReaction, audioStrength);\n\n  vec4 noise = makeNoiseBlob2(uv * (1.0 - likeReaction * 0.5) + noiseOffset, color1, color2, strength, offset);\n  noise.a = mix(0.0, noise.a, smoothstep(outerRadius, 0.5, len));\n  noise.rgb += 0.6 * likeReaction * (1.0 - smoothstep(0.2, outerRadius * 0.8, len));\n\n  return noise;\n}\n\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / vScreenSize.xy;\n\n  uv = uv * 2.0 - 1.0;\n  uv.y *= vScreenSize.y / min(vScreenSize.x, vScreenSize.y) / vScale;\n  uv.x *= vScreenSize.x / min(vScreenSize.x, vScreenSize.y) / vScale;\n\n  vec2 ruv = uv * 2.0;\n  float pr = length(ruv);\n  float pa = atan(ruv.y, ruv.x);\n\n  float idx = (pa/3.1415) / 2.0;   // 0 to 1\n\n  vec2 ruv1 = rotate(uv * 2.0, 3.1415);\n  float pa1 = atan(ruv1.y, ruv1.x);\n  float idx1 = (pa1/3.1415) / 2.0;   // 0 to 1\n  float idx21 = (pa1/3.1415 + 1.0) / 2.0 * 3.1415; // 0 to PI\n\n  float spark = triNoise3D(vec3(idx, 0.0, 0.0), 0.1);\n  spark = mix(spark, triNoise3D(vec3(idx1, 0.0, idx1), 0.1), smoothstep(0.9, 1.0, sin(idx21)));\n  spark = spark * 0.2 + pow(spark, 10.);\n  spark = smoothstep(0.0, spark, 0.3) * spark;\n\n  ${rt(e)} color = vColorBackground;\n  vec4 blobColor;\n  float floatIndex;\n  float radius;\n\n  float n0 = snoise3(vec3(uv * 1.2, vTime * 0.5));\n\n  for (int i = 0; i < ${t}; i++) {\n    floatIndex = float(i);\n    radius = CIRCLE_RADIUS_BASE - CIRCLE_RADIUS_STEP * floatIndex;\n    blobColor = makeBlob(uv,\n                         mix(radius, radius + 0.3, n0),\n                         vColor[i],\n                         vColor[i+3],\n                         CIRCLE_WIDTH_BASE - CIRCLE_WIDTH_STEP * floatIndex,\n                         (SPARK_STRENGTH_BASE - SPARK_STRENGTH_STEP * floatIndex) * spark,\n                         vReact[i],\n                         vAudio[i],\n                         CIRCLE_OFFSET_BASE + CIRCLE_OFFSET_STEP * floatIndex,\n                         rotate(vRotation[i].xy, vTime * vRotation[i].z));\n\n\n    ${((t) => (t ? 'color.rgb = mix(color.rgb, blobColor.rgb, blobColor.a); color.a = max(blobColor.a, color.a);' : 'color = mix(color, blobColor.rgb, blobColor.a);'))(e)}\n  }\n\n  ${((t) => (t ? 'gl_FragColor = color;' : 'gl_FragColor = vec4(color, 1.0);'))(e)}\n}\n`;
+        getColorType = (transparent) => (transparent ? 'vec4' : 'vec3'),
+        createTriNoiseIterations = () =>
+            Array.from(
+                { length: 5 },
+                () => `  {
+    vec3 dg = tri3(bp*0.01); // Increase the scale factor to make noise less frequent
+    p += (dg+vTime*.1*.1);
+
+    bp *= 4.; // Increase the scale factor
+    z *= 0.9;
+    p *= 1.6; // Increase the scale factor
+
+    rz+= (tri(p.z+tri(0.6*p.x+0.1*tri(p.y))))/z;
+  }`,
+            ).join('\n'),
+        createVertexShader = () => `
+precision highp float;
+
+attribute vec4 position;
+varying highp vec2 textureUv;
+
+void main() {
+  textureUv = position.xy * 0.5 + 0.5;
+  gl_Position = position;
+}
+`,
+        createNoiseCacheFragment = (layerCount) => `
+precision highp float;
+
+varying highp vec2 textureUv;
+
+uniform vec2 vScreenSize;
+uniform float vTime;
+uniform float vScale;
+uniform vec4 vBlobParams[3];
+uniform float vReact[3];
+
+vec4 permute(vec4 x){return mod(((x*34.0)+1.0)*x, 289.0);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
+
+float snoise3(vec3 v) {
+  const vec2 C = vec2(0.1666667, 0.3333333);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+
+  vec3 i = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+
+  vec3 g = step(x0.yzx, x0.xyz);
+  vec3 l = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + 2.0 * C.xxx;
+  vec3 x3 = x0 - 1.0 + 3.0 * C.xxx;
+
+  i = mod(i, 289.0);
+  vec4 p = permute(permute(permute(
+             i.z + vec4(0.0, i1.z, i2.z, 1.0))
+           + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+           + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+
+  float n_ = 0.142857142857;
+  vec3 ns = n_ * D.wyz - D.xzx;
+
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+
+  vec4 x = x_ * ns.x + ns.yyyy;
+  vec4 y = y_ * ns.x + ns.yyyy;
+  vec4 h = 1.0 - abs(x) - abs(y);
+
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0) * 2.0 + 1.0;
+  vec4 s1 = floor(b1) * 2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+
+  vec3 p0 = vec3(a0.xy, h.x);
+  vec3 p1 = vec3(a0.zw, h.y);
+  vec3 p2 = vec3(a1.xy, h.z);
+  vec3 p3 = vec3(a1.zw, h.w);
+  vec4 norm = taylorInvSqrt(vec4(
+    dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)
+  ));
+  p0 *= norm.x;
+  p1 *= norm.y;
+  p2 *= norm.z;
+  p3 *= norm.w;
+
+  vec4 m = max(0.6 - vec4(
+    dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)
+  ), 0.0);
+  m *= m;
+  return 42.0 * dot(m * m, vec4(
+    dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)
+  ));
+}
+
+vec2 getEffectUv() {
+  float invMinScreenScale = 1.0 / (min(vScreenSize.x, vScreenSize.y) * vScale);
+  return (textureUv * 2.0 - 1.0) * vScreenSize * invMinScreenScale;
+}
+
+float getLayerNoise(vec2 uv, float reaction, vec2 noiseOffset, float offset) {
+  vec2 localUv = uv * (1.0 - reaction * 0.5) + noiseOffset;
+  return clamp(
+    snoise3(vec3(localUv * 1.2 + offset, vTime * 0.5 + offset)) * 0.5 + 0.5,
+    0.0,
+    1.0
+  );
+}
+
+void main() {
+  vec2 uv = getEffectUv();
+  float sharedNoise = clamp(snoise3(vec3(uv * 1.2, vTime * 0.5)), -1.0, 1.0);
+
+  float layerNoise0 = 0.5;
+  float layerNoise1 = 0.5;
+  float layerNoise2 = 0.5;
+${Array.from({ length: layerCount }, (_, i) => `  layerNoise${i} = getLayerNoise(uv, vReact[${i}], vBlobParams[${i}].xy, ${(1.57 * i).toFixed(2)});`).join('\n')}
+
+  gl_FragColor = vec4(
+    sharedNoise * 0.5 + 0.5,
+    layerNoise0,
+    layerNoise1,
+    layerNoise2
+  );
+}
+`,
+        createSparkLutFragment = () => `
+precision highp float;
+
+varying highp vec2 textureUv;
+uniform float vTime;
+
+#define EFFECT_PI 3.1415
+#define TWO_EFFECT_PI 6.283
+#define MATH_PI 3.14159265359
+#define TWO_MATH_PI 6.28318530718
+#define INV_TWO_EFFECT_PI 0.15915963712
+
+float tri(float x){return abs(fract(x) - 0.5);}
+vec3 tri3(vec3 p){
+  float triangleX = tri(p.x);
+  return vec3(
+    tri(p.z + tri(p.y * 20.0)),
+    tri(p.z + triangleX),
+    tri(p.y + triangleX)
+  );
+}
+
+float triNoise3D(vec3 p) {
+  float z = 0.4;
+  float result = 0.1;
+  vec3 base = p;
+  float timeShift = vTime * 0.01;
+${Array.from({ length: 5 }, () => `  {
+    vec3 displacement = tri3(base * 0.01);
+    p += displacement + timeShift;
+    base *= 4.0;
+    z *= 0.9;
+    p *= 1.6;
+    result += tri(p.z + tri(0.6 * p.x + 0.1 * tri(p.y))) / z;
+  }`).join('\n')}
+  return smoothstep(0.0, 8.0, result + sin(result + sin(z) * 2.8) * 2.2);
+}
+
+float getRawSpark(float angleIndex) {
+  float angle = angleIndex * TWO_EFFECT_PI;
+  float shiftedAngle = angle + EFFECT_PI;
+  if (shiftedAngle > MATH_PI) {
+    shiftedAngle -= TWO_MATH_PI;
+  }
+
+  float shiftedIndex = shiftedAngle * INV_TWO_EFFECT_PI;
+  float seamAngle = (shiftedAngle + EFFECT_PI) * 0.5;
+  float seamWeight = smoothstep(0.9, 1.0, sin(seamAngle));
+  float spark = triNoise3D(vec3(angleIndex, 0.0, 0.0));
+
+  if (seamWeight > 0.0) {
+    float seamSpark = triNoise3D(vec3(shiftedIndex, 0.0, shiftedIndex));
+    spark = mix(spark, seamSpark, seamWeight);
+  }
+  return spark;
+}
+
+void main() {
+  float angleIndex = textureUv.x - 0.5;
+  gl_FragColor = vec4(getRawSpark(angleIndex), 0.0, 0.0, 1.0);
+}
+`,
+        createCompositeFragment = (layerCount, transparent) => {
+            const colorType = getColorType(transparent),
+                mixColor = transparent
+                    ? 'color.rgb = mix(color.rgb, blobColor.rgb, blobColor.a); color.a = max(blobColor.a, color.a);'
+                    : 'color = mix(color, blobColor.rgb, blobColor.a);',
+                fragColor = transparent ? 'gl_FragColor = color;' : 'gl_FragColor = vec4(color, 1.0);',
+                channels = ['g', 'b', 'a'],
+                blobs = Array.from({ length: layerCount }, (_, i) => `
+  blobColor = makeBlobFromCachedNoise(
+    uv,
+    baseLen,
+    cachedNoise.${channels[i]},
+    CIRCLE_RADIUS_BASE - CIRCLE_RADIUS_STEP * ${i.toFixed(1)} + 0.3 * sharedNoise,
+    vColor[${i}],
+    vColor[${i + 3}],
+    CIRCLE_WIDTH_BASE - CIRCLE_WIDTH_STEP * ${i.toFixed(1)},
+    (SPARK_STRENGTH_BASE - SPARK_STRENGTH_STEP * ${i.toFixed(1)}) * spark,
+    vReact[${i}],
+    vAudio[${i}],
+    vBlobParams[${i}]
+  );
+  ${mixColor}`).join('\n');
+            return `
+precision highp float;
+
+varying highp vec2 textureUv;
+
+uniform vec2 vScreenSize;
+uniform float vScale;
+uniform ${colorType} vColorBackground;
+uniform vec3 vColor[6];
+uniform vec4 vBlobParams[3];
+uniform float vAudio[3];
+uniform float vReact[3];
+uniform sampler2D vNoiseCache;
+uniform sampler2D vSparkLut;
+
+#define INV_TWO_EFFECT_PI 0.15915963712
+#define CIRCLE_WIDTH_BASE 0.8
+#define CIRCLE_WIDTH_STEP 0.2
+#define SPARK_STRENGTH_BASE 1.0
+#define SPARK_STRENGTH_STEP 0.3
+#define CIRCLE_RADIUS_BASE 0.95
+#define CIRCLE_RADIUS_STEP 0.15
+
+float shapeSpark(float rawSpark) {
+  float spark2 = rawSpark * rawSpark;
+  float spark4 = spark2 * spark2;
+  float spark8 = spark4 * spark4;
+  float spark = rawSpark * 0.2 + spark8 * spark2;
+  float gateInput = clamp(0.3 / max(spark, 0.00001), 0.0, 1.0);
+  float gate = gateInput * gateInput * (3.0 - 2.0 * gateInput);
+  return spark * gate;
+}
+
+vec2 getEffectUv() {
+  float invMinScreenScale = 1.0 / (min(vScreenSize.x, vScreenSize.y) * vScale);
+  return (textureUv * 2.0 - 1.0) * vScreenSize * invMinScreenScale;
+}
+
+vec4 makeBlobFromCachedNoise(
+  vec2 uv,
+  float baseLen,
+  float layerNoise,
+  float blob,
+  vec3 color1,
+  vec3 color2,
+  float width,
+  float baseReaction,
+  float likeReaction,
+  float audioStrength,
+  vec4 blobParams
+) {
+  float outerRadius = blob + width * 0.5
+    + baseReaction * (1.0 + max(likeReaction, audioStrength * 0.6) * 50.0 * baseReaction);
+
+  if (baseLen >= outerRadius) {
+    return vec4(0.0);
+  }
+
+  vec2 localUv = uv * (1.0 - likeReaction * 0.5) + blobParams.xy;
+  float localLen = length(localUv);
+  float distanceToNoise = abs(localLen - layerNoise);
+
+  float innerEdge = layerNoise + 0.1 + blobParams.z;
+  float alpha = 1.0 - smoothstep(layerNoise, innerEdge, localLen);
+  float outerMask = 1.0 - smoothstep(0.5, outerRadius, baseLen);
+  alpha *= outerMask;
+
+  float strength = max(likeReaction, audioStrength);
+  float intensity = 0.15 * (1.0 + 1.5 * blobParams.w) + 0.3 * strength;
+  float glow = intensity / (1.0 + 11.0 * distanceToNoise);
+
+  vec3 color = clamp(mix(color1, color2, localUv.y * 2.0) + glow, 0.0, 1.0);
+  color += 0.6 * likeReaction * (1.0 - smoothstep(0.2, outerRadius * 0.8, baseLen));
+  return vec4(color, alpha);
+}
+
+void main() {
+  vec2 uv = getEffectUv();
+  float baseLen = length(uv);
+  float angleIndex = atan(uv.y, uv.x) * INV_TWO_EFFECT_PI;
+  float sparkTextureX = fract(angleIndex + 0.5);
+
+  vec4 cachedNoise = texture2D(vNoiseCache, textureUv);
+  float sharedNoise = cachedNoise.r * 2.0 - 1.0;
+  float spark = shapeSpark(texture2D(vSparkLut, vec2(sparkTextureX, 0.5)).r);
+
+  ${colorType} color = vColorBackground;
+  vec4 blobColor;
+${blobs}
+
+  ${fragColor}
+}
+`;
+        },
+        createShaderSources = (layerCount, transparent) => ({
+            vertex: createVertexShader(),
+            noiseCacheFragment: createNoiseCacheFragment(layerCount),
+            sparkLutFragment: createSparkLutFragment(),
+            compositeFragment: createCompositeFragment(layerCount, transparent),
+        }),
+        createCachedRenderTarget = (gl, width, height, { wrapS = gl.CLAMP_TO_EDGE, wrapT = gl.CLAMP_TO_EDGE } = {}) => {
+            if (width <= 0 || height <= 0) throw new RangeError('render target dimensions must be positive');
+            const renderer = gl.renderer,
+                textureHandle = gl.createTexture(),
+                framebuffer = gl.createFramebuffer(),
+                texture = {
+                    texture: textureHandle,
+                    width,
+                    height,
+                    update(unit = 0) {
+                        renderer.activeTexture(unit);
+                        if (renderer.state.textureUnits[unit] !== this) {
+                            gl.bindTexture(gl.TEXTURE_2D, textureHandle);
+                            renderer.state.textureUnits[unit] = this;
+                        }
+                    },
+                },
+                target = {
+                    width,
+                    height,
+                    depth: !1,
+                    stencil: !1,
+                    target: gl.FRAMEBUFFER,
+                    buffer: framebuffer,
+                    texture,
+                    setSize(nextWidth, nextHeight) {
+                        nextWidth = Math.max(1, Math.round(nextWidth));
+                        nextHeight = Math.max(1, Math.round(nextHeight));
+                        if (this.width === nextWidth && this.height === nextHeight) return;
+                        this.width = texture.width = nextWidth;
+                        this.height = texture.height = nextHeight;
+                        texture.update(0);
+                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, nextWidth, nextHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+                    },
+                    destroy() {
+                        gl.deleteFramebuffer(framebuffer);
+                        gl.deleteTexture(textureHandle);
+                    },
+                };
+
+            texture.update(0);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapS);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrapT);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            renderer.bindFramebuffer(target);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, textureHandle, 0);
+            const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+            renderer.bindFramebuffer();
+            if (status !== gl.FRAMEBUFFER_COMPLETE) {
+                target.destroy();
+                throw new Error(`Unable to create shader cache framebuffer: ${status}`);
+            }
+            return target;
+        };
     class at {
         fps;
         render;
@@ -2678,6 +3049,7 @@
         time = Math.floor(3600 * Math.random());
         color;
         rotation = [new c(-0.3, 0.3, 0.2), new c(-0.3, -0.3, -0.2), new c(-0.3, -0.3, 0.2)];
+        blobParams = Array.from({ length: 3 }, () => new Float32Array(4));
         audioLow = 0;
         audioMiddle = 0;
         audioHigh = 0;
@@ -2685,13 +3057,24 @@
         reactTop = new ut(0, 0, 600);
         reactMiddle = new ut(0, 0, 600);
         reactBottom = new ut(0, 0, 600);
-        point = [0, 0];
-        interaction = 0;
         width = 0;
         height = 0;
         shaderOptions;
+        uniformValues;
         constructor(t, e) {
-            (this.shaderOptions = e), (this.color = new gt(t)), this.updateSize();
+            (this.shaderOptions = e),
+                (this.color = new gt(t)),
+                this.updateSize(),
+                (this.uniformValues = {
+                    vScreenSize: this.toValue(new K(this.width, this.height)),
+                    vTime: this.toValue(this.time),
+                    vScale: this.toValue(this.fragmentScale),
+                    vColorBackground: this.toValue(this.background),
+                    vColor: this.toValue(this.color.value),
+                    vBlobParams: this.toValue(this.blobParams),
+                    vAudio: this.toValue([this.audioLow, this.audioMiddle, this.audioHigh]),
+                    vReact: this.toValue([this.reactTop.value, this.reactMiddle.value, this.reactBottom.value]),
+                });
         }
         switchToDefaultHue(t) {
             this.color.switchToDefaultHue(t);
@@ -2746,14 +3129,15 @@
             const e = (this.energy.value * t) / 1e3;
             this.time = (this.time + e) % 86400;
         }
-        getUpdatedAudioParam(t, e, i = 0.02) {
-            const s = Math.max(0, Math.min(1, t)),
-                r = Math.max(0, Math.min(1, e));
-            if (r > s) return r;
-            if (r < s) {
-                return s - Math.min(i, s - r);
+        getUpdatedAudioParam(t, e, i, s) {
+            const r = Math.max(0, Math.min(1, t)),
+                n = Math.max(0, Math.min(1, e));
+            if (n > r) return n;
+            if (n < r) {
+                const t = Math.max(0, i) / Math.max(1, s);
+                return r - Math.min(t, r - n);
             }
-            return s;
+            return r;
         }
         update(t) {
             this.energy.next(t),
@@ -2764,9 +3148,9 @@
                 this.updateTime(t),
                 this.audioFrequencies &&
                     (this.audioRatio.next(t),
-                    (this.audioLow = this.getUpdatedAudioParam(this.audioLow, this.audioFrequencies.low) * this.audioRatio.value),
-                    (this.audioMiddle = this.getUpdatedAudioParam(this.audioMiddle, this.audioFrequencies.middle) * this.audioRatio.value),
-                    (this.audioHigh = this.getUpdatedAudioParam(this.audioHigh, this.audioFrequencies.high) * this.audioRatio.value));
+                    (this.audioLow = this.getUpdatedAudioParam(this.audioLow, this.audioFrequencies.low, t, 350) * this.audioRatio.value),
+                    (this.audioMiddle = this.getUpdatedAudioParam(this.audioMiddle, this.audioFrequencies.middle, t, 500) * this.audioRatio.value),
+                    (this.audioHigh = this.getUpdatedAudioParam(this.audioHigh, this.audioFrequencies.high, t, 220) * this.audioRatio.value));
         }
         get fragmentScale() {
             return this.isMobile ? this.baseScale * this.shaderOptions.canvasSize.mobileScale : this.baseScale * this.shaderOptions.canvasSize.desktopScale;
@@ -2775,19 +3159,42 @@
             const t = this.isMobile ? this.shaderOptions.canvasSize.mobileSizePx : this.shaderOptions.canvasSize.desktopSizePx;
             return { width: t, height: t };
         }
-        toObject() {
-            return {
-                vScreenSize: this.toValue(new K(this.width, this.height)),
-                vTime: this.toValue(this.time),
-                vScale: this.toValue(this.fragmentScale),
-                vColorBackground: this.toValue(this.background),
-                vColor: this.toValue(this.color.value),
-                vRotation: this.toValue(this.rotation),
-                vAudio: this.toValue([this.audioLow, this.audioMiddle, this.audioHigh]),
-                vReact: this.toValue([this.reactTop.value, this.reactMiddle.value, this.reactBottom.value]),
-                vInteractionPoint: this.toValue(this.point),
-                vInteraction: this.toValue(this.interaction),
-            };
+        syncBlobParams() {
+            const t = this.time;
+            for (let e = 0; e < 3; e++) {
+                const i = this.rotation[e],
+                    s = t * i[2],
+                    r = Math.sin(s),
+                    n = Math.cos(s),
+                    a = 1.57 * e,
+                    h = this.blobParams[e];
+                (h[0] = i[0] * n - i[1] * r),
+                    (h[1] = i[0] * r + i[1] * n),
+                    (h[2] = Math.sin(t + a) + 1),
+                    (h[3] = -Math.sin(t * 2 + a * 0.5) * 0.5);
+            }
+        }
+        syncUniformValues() {
+            const t = this.uniformValues,
+                e = t.vScreenSize.value,
+                i = t.vAudio.value,
+                s = t.vReact.value;
+            return (
+                this.syncBlobParams(),
+                (e[0] = this.width),
+                (e[1] = this.height),
+                (t.vTime.value = this.time),
+                (t.vScale.value = this.fragmentScale),
+                (t.vColorBackground.value = this.background),
+                (t.vColor.value = this.color.value),
+                (i[0] = this.audioLow),
+                (i[1] = this.audioMiddle),
+                (i[2] = this.audioHigh),
+                (s[0] = this.reactTop.value),
+                (s[1] = this.reactMiddle.value),
+                (s[2] = this.reactBottom.value),
+                t
+            );
         }
     }
     var mt;
@@ -2797,7 +3204,6 @@
     class ft {
         isRenderingEnabled = !0;
         state;
-        scene = new V();
         shader;
         renderer;
         ticker;
@@ -2828,35 +3234,112 @@
             return new w({
                 canvas: this.canvas,
                 alpha: this.shaderOptions.transparent,
+                depth: !1,
                 antialias: this.shaderOptions.antialias,
                 preserveDrawingBuffer: this.shaderOptions.transparent,
                 width: t,
                 height: e,
             });
         }
-        getVertexAndFragment(t) {
-            return {
-                vertex: '\nprecision highp float;\nattribute vec4 position;\n\nvoid main() {\n    gl_Position = position;\n}\n',
-                fragment: nt(t, this.shaderOptions.transparent),
-            };
+        getShaderSources(t) {
+            return createShaderSources(t, this.shaderOptions.transparent);
         }
         enableLiteAnimation() {
-            (this.state = mt.LITE), this.program?.setShaders(this.getVertexAndFragment(2));
+            (this.state = mt.LITE), this.shader?.enableLiteAnimation();
         }
         createShader() {
             if (!this.renderer || !this.uniforms) return;
-            const t = this.renderer.gl,
-                e = this.isLiteAnimationEnabled ? 2 : 3,
-                i = new J(t, { width: 2, height: 2 }),
-                s = new b(t, { ...this.getVertexAndFragment(e), uniforms: this.uniforms.toObject() });
-            this.program = s;
-            return new Y(t, { geometry: i, program: s }).setParent(this.scene), s;
+            const renderer = this.renderer,
+                gl = renderer.gl,
+                layerCount = this.isLiteAnimationEnabled ? 2 : 3,
+                geometry = new J(gl, { width: 2, height: 2 }),
+                noiseScene = new V(),
+                sparkScene = new V(),
+                compositeScene = new V(),
+                sources = this.getShaderSources(layerCount),
+                { width, height } = this.uniforms.size,
+                noiseTarget = createCachedRenderTarget(gl, Math.max(1, Math.round(width * 0.5)), Math.max(1, Math.round(height * 0.5))),
+                sparkTarget = createCachedRenderTarget(gl, 512, 1, { wrapS: gl.REPEAT, wrapT: gl.CLAMP_TO_EDGE }),
+                uniforms = this.uniforms.syncUniformValues(),
+                noiseProgram = new b(gl, {
+                    vertex: sources.vertex,
+                    fragment: sources.noiseCacheFragment,
+                    uniforms,
+                    cullFace: null,
+                    depthTest: !1,
+                    depthWrite: !1,
+                }),
+                sparkProgram = new b(gl, {
+                    vertex: sources.vertex,
+                    fragment: sources.sparkLutFragment,
+                    uniforms,
+                    cullFace: null,
+                    depthTest: !1,
+                    depthWrite: !1,
+                }),
+                compositeProgram = new b(gl, {
+                    vertex: sources.vertex,
+                    fragment: sources.compositeFragment,
+                    uniforms: {
+                        ...uniforms,
+                        vNoiseCache: { value: noiseTarget.texture },
+                        vSparkLut: { value: sparkTarget.texture },
+                    },
+                    cullFace: null,
+                    depthTest: !1,
+                    depthWrite: !1,
+                });
+
+            new Y(gl, { geometry, program: noiseProgram }).setParent(noiseScene);
+            new Y(gl, { geometry, program: sparkProgram }).setParent(sparkScene);
+            new Y(gl, { geometry, program: compositeProgram }).setParent(compositeScene);
+            this.program = compositeProgram;
+
+            return {
+                enableLiteAnimation: () => {
+                    const next = this.getShaderSources(2);
+                    noiseProgram.setShaders({ vertex: next.vertex, fragment: next.noiseCacheFragment });
+                    compositeProgram.setShaders({ vertex: next.vertex, fragment: next.compositeFragment });
+                },
+                setSize: (nextWidth, nextHeight) => {
+                    noiseTarget.setSize(Math.max(1, Math.round(nextWidth * 0.5)), Math.max(1, Math.round(nextHeight * 0.5)));
+                },
+                render: () => {
+                    renderer.render({ scene: noiseScene, target: noiseTarget, update: !1, sort: !1, frustumCull: !1 });
+                    renderer.render({ scene: sparkScene, target: sparkTarget, update: !1, sort: !1, frustumCull: !1 });
+                    renderer.render({ scene: compositeScene, update: !1, sort: !1, frustumCull: !1 });
+                },
+                destroy: () => {
+                    noiseProgram.remove();
+                    sparkProgram.remove();
+                    compositeProgram.remove();
+                    geometry.remove();
+                    noiseTarget.destroy();
+                    sparkTarget.destroy();
+                },
+            };
         }
         render(t = 1) {
-            this.shader && this.uniforms && (this.uniforms.update(t), (this.shader.uniforms = this.uniforms.toObject()), this.renderer?.render({ scene: this.scene }));
+            this.shader && this.uniforms && (this.uniforms.update(t), this.uniforms.syncUniformValues(), this.shader.render());
         }
         updateRenderingState() {
             this.isRenderingEnabled ? this.ticker?.start() : this.ticker?.stop();
+        }
+        updateRuntimeSettings({ fps: t, resolution: e } = {}) {
+            const i = Number(t);
+            if (Number.isFinite(i) && i > 0 && this.ticker) {
+                this.ticker.stop();
+                this.ticker.fps = i;
+                this.isRenderingEnabled && this.ticker.start();
+            }
+            const s = Number(e);
+            if (Number.isFinite(s) && s > 0 && this.uniforms && this.renderer) {
+                this.shaderOptions.canvasSize.desktopSizePx = s;
+                this.uniforms.updateSize();
+                const { width: t, height: e } = this.uniforms.size;
+                this.renderer.setSize(t, e);
+                this.shader?.setSize(t, e);
+            }
         }
         get isLiteAnimationEnabled() {
             return this.state === mt.LITE;
@@ -2923,6 +3406,7 @@
         }
         destroy() {
             this.ticker?.stop();
+            this.shader?.destroy?.();
         }
     }
     let vt = null;
@@ -2944,6 +3428,10 @@
             case t.UPDATE_LAYOUT: {
                 const t = e.data.payload;
                 vt?.uniforms?.updateLayout(Boolean(t?.isMobile));
+                break;
+            }
+            case t.UPDATE_RUNTIME_SETTINGS: {
+                vt?.updateRuntimeSettings(e.data.payload);
                 break;
             }
             case t.AUDIO_ANALYZER_FREQUENCIES: {
