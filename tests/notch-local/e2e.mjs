@@ -171,6 +171,91 @@ const alive = await mw.j(`(() => JSON.stringify({ panels: [...document.querySele
 check('панель трека не закрывается сама', alive.panels > 0);
 await mw.evalp(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); 0`);
 
+// 4.5) поиск из нотча: лупа → поле → Enter → основной экран с результатами; отмена — Esc/лупа/клик мимо
+// Разворот: настоящий input-евент + запасной DOM-mouseover (Chromium не доносит
+// CDP-инпут до скрытых/фоновых окон — а React слушает именно mouseover)
+const expandNotch = async () => {
+    await nw.input({ type: 'mouseMoved', x: 180, y: 8, button: 'none' });
+    await sleep(400);
+    await nw.evalp(`document.querySelector('.Notch_pill')?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); 1`);
+    await sleep(500);
+    return (await nw.j(`document.querySelector('.Notch_root').className.includes('expanded')`));
+};
+const typeQuery = async (text, key) =>
+    nw.evalp(`(() => { const i = document.querySelector('.Notch_searchInput'); if (!i) return 0; const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ${JSON.stringify(text)}); i.dispatchEvent(new Event('input', { bubbles: true })); if (${JSON.stringify(key)}) i.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true })); return 1; })()`);
+
+check('панель разворачивается ховером', await expandNotch());
+check('лупа в шапке развёрнутой панели', (await nw.j(`!!document.querySelector('.Notch_searchButton')`)));
+await nw.evalp(`document.querySelector('.Notch_searchButton')?.click()`);
+await sleep(700);
+const searchBar = await nw.j(`(() => { const i = document.querySelector('.Notch_searchInput'); const pin = document.querySelector('.Notch_pinButton'); const btn = document.querySelector('.Notch_searchButton'); return JSON.stringify({ open: !!i, focused: document.activeElement === i, color: i ? getComputedStyle(i).color : '', corners: !!pin && !!btn && getComputedStyle(pin).display !== 'none' && getComputedStyle(btn).display !== 'none' }); })()`);
+check('поле поиска открылось', searchBar.open);
+check('поле в фокусе (окно стало key-окном)', searchBar.focused);
+check('текст поля жёлтый как активный пин', searchBar.color === 'rgb(255, 219, 77)', searchBar.color);
+check('лупа слева и пин справа обрамляют поле', searchBar.corners);
+
+// крестик: очищает набранное, поле остаётся
+await typeQuery('кино');
+await nw.evalp(`document.querySelector('.Notch_searchClear')?.click()`);
+await sleep(300);
+const cleared = await nw.j(`(() => { const i = document.querySelector('.Notch_searchInput'); return JSON.stringify({ open: !!i, empty: i ? i.value === '' : false }); })()`);
+check('крестик очищает поле, поле открыто', cleared.open && cleared.empty, JSON.stringify(cleared));
+
+// пустой Enter не навигирует
+const pathBeforeEmpty = (await mw.evalp(`location.pathname`)).result.result.value;
+await typeQuery('', 'Enter');
+await sleep(1500);
+check('пустой Enter не навигирует', (await mw.evalp(`location.pathname`)).result.result.value === pathBeforeEmpty);
+
+// лупа — тогл: повторный клик сворачивает поле, панель держится
+await nw.evalp(`document.querySelector('.Notch_searchButton')?.click()`);
+await sleep(500);
+const toggled = await nw.j(`(() => JSON.stringify({ closed: !document.querySelector('.Notch_searchInput'), expanded: document.querySelector('.Notch_root').className.includes('expanded') }))()`);
+check('повторный клик по лупе сворачивает поле', toggled.closed && toggled.expanded, JSON.stringify(toggled));
+
+// ввод и Enter: основной экран уходит на /search?text=… с результатами
+await nw.evalp(`document.querySelector('.Notch_searchButton')?.click()`);
+await sleep(700);
+await typeQuery('кино', 'Enter');
+let searchNav = null;
+for (let i = 0; i < 10 && !searchNav; i += 1) {
+    await sleep(1000);
+    const st = await mw.j(`(() => JSON.stringify({ path: location.pathname, search: location.search }))()`);
+    if (st.path.startsWith('/search')) searchNav = st;
+}
+check('Enter уводит основной экран на /search?text=…', !!searchNav, searchNav ? searchNav.path + searchNav.search : 'не дождались 10с');
+if (searchNav) check('запрос передан в URL', decodeURIComponent(searchNav.search).includes('text=кино'), searchNav.search);
+let searchResults = false;
+for (let i = 0; i < 10 && !searchResults; i += 1) {
+    await sleep(1000);
+    searchResults = (await mw.evalp(`(() => document.querySelectorAll('a[href*="/track/"], a[href*="/artist/"], a[href*="/album/"]').length > 0)()`)).result.result.value;
+}
+check('результаты поиска отрисовались', searchResults);
+
+// клик мимо (блюр): поле гаснет И панель сворачивается — не висит открытой
+await mw.evalp(`location.href = 'music-application://desktop/'`);
+await sleep(2500);
+await expandNotch();
+await nw.evalp(`document.querySelector('.Notch_searchButton')?.click()`);
+await sleep(700);
+await typeQuery('король и шут');
+await nw.evalp(`window.dispatchEvent(new Event('blur')); 1`);
+await sleep(1300);
+const blurState = await nw.j(`(() => JSON.stringify({ closed: !document.querySelector('.Notch_searchInput'), collapsed: !document.querySelector('.Notch_root').className.includes('expanded') }))()`);
+check('клик мимо: поле и панель гаснут (не висит)', blurState.closed && blurState.collapsed, JSON.stringify(blurState));
+
+// Esc: сворачивает поле обратно в лупу, без навигации
+await sleep(1300); // кулдаун повторного разворота после сворачивания
+await expandNotch();
+await nw.evalp(`document.querySelector('.Notch_searchButton')?.click()`);
+await sleep(700);
+await typeQuery('король и шут', 'Escape');
+await sleep(1200);
+const escNotch = await nw.j(`(() => JSON.stringify({ closed: !document.querySelector('.Notch_searchInput'), btn: !!document.querySelector('.Notch_searchButton') }))()`);
+const escMain = (await mw.evalp(`location.pathname`)).result.result.value;
+check('Esc сворачивает поле обратно в лупу', escNotch.closed && escNotch.btn, JSON.stringify(escNotch));
+check('Esc не навигирует', escMain === '/', escMain);
+
 // 5) настройки: модалка «Миниплеер» с пунктами нотча
 await mw.evalp(`location.href = 'music-application://desktop/settings'`);
 await sleep(6000);

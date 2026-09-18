@@ -50,7 +50,10 @@
 }
 .TitleBar_pulseText__FhYv {
     margin-right: 20px;
-    color: rgba(255, 255, 255, 0.29);
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.75);
     font-family: var(--ym-font-text);
     font-weight: 100;
     line-height: var(--ym-font-line-height-label-s);

@@ -1490,6 +1490,16 @@ if (process.platform === 'darwin') {
             mainWindow?.webContents.send(events_js_1.Events.PULSESYNC_API, { action: 'clickTrackMenuItem', args: [item.label, item.parent, item.kind] });
             return;
         }
+        if (action === 'NOTCH_SEARCH_QUERY') {
+            // поиск из нотча: основное окно + deeplink на страницу поиска.
+            // Страница читает запрос из ?text= — результаты приходят сразу
+            const searchQuery = String(value ?? '').trim();
+            if (!searchQuery) return;
+            focusMainWindow();
+            mainWindow?.webContents.send(events_js_1.Events.PULSESYNC_API, { action: 'closeTrackMenu' });
+            sendOpenDeeplink(mainWindow, `/search?text=${encodeURIComponent(searchQuery)}`);
+            return;
+        }
         if (action === 'NOTCH_MENU_OPEN_TRACK' || action === 'NOTCH_MENU_OPEN_ARTIST') {
             const track = NotchPlayer.lastPlayerState?.track;
             const [trackId, compositeAlbumId] = String(track?.id ?? '').split(':');

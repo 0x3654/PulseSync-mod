@@ -101,6 +101,14 @@ class NotchPlayer {
             if (!entry || entry.window.isDestroyed()) return;
             entry.expanded = Boolean(expanded);
         });
+        // Поле поиска в нотче требует клавиатуры: окно рождено focusable:false,
+        // на время ввода делаем его key-окном, закрытие возвращает как было
+        electron.ipcMain.on('NOTCHPLAYER_SEARCH_MODE', (event, active) => {
+            const entry = this.entryBySender(event.sender);
+            if (!entry || entry.window.isDestroyed()) return;
+            entry.window.setFocusable(active === true);
+            if (active === true) entry.window.focus();
+        });
     }
 
     setMenuItems(items) {
