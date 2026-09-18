@@ -185,6 +185,7 @@
         365: (e) => {
             e.exports = {
                 root: 'TitleBar_root__QjdOZ',
+                root_macos: 'TitleBar_root_macos__QjdOZ',
                 button: 'TitleBar_button__9MptL',
                 button_withSecondaryColor: 'TitleBar_button_withSecondaryColor__oIkuo',
                 icon: 'TitleBar_icon__8Wji9',
@@ -528,6 +529,7 @@
                     let { withSecondaryColor: t } = e,
                         { settings: a } = (0, l.g)(),
                         s = a.isWindowsApplication || a.isLinuxApplication,
+                        isMacOS = a.isMacOSApplication,
                         { formatMessage: d } = (0, o.A)(),
                         v = (0, n.useCallback)(() => {
                             (() => {
@@ -568,9 +570,9 @@
                     }, []);
                     return (0, r.jsx)('div', {
                         className: c().root,
-                        onDoubleClick: E,
+                        onDoubleClick: isMacOS ? void 0 : E,
                         children:
-                            s &&
+                            (s || isMacOS) &&
                             (0, r.jsxs)(r.Fragment, {
                                 children: [
                                     !w && (0, r.jsx)('span', { className: c().pulseText, children: 'PulseSync '.concat(window.PULSE_VERSION) }),
@@ -616,7 +618,7 @@
                                             ],
                                         }),
                                     }),
-                                    (0, r.jsx)(h, {
+                                    s && (0, r.jsx)(h, {
                                         onClick: v,
                                         ariaLabel: d({ id: 'windows-menu.roll-up' }),
                                         withSecondaryColor: t,
@@ -632,7 +634,7 @@
                                             }),
                                         }),
                                     }),
-                                    (0, r.jsx)(h, {
+                                    s && (0, r.jsx)(h, {
                                         onClick: y,
                                         ariaLabel: d({ id: 'windows-menu.unwrap' }),
                                         withSecondaryColor: t,
@@ -648,7 +650,7 @@
                                             }),
                                         }),
                                     }),
-                                    (0, r.jsx)(h, {
+                                    s && (0, r.jsx)(h, {
                                         className: c().closeButton,
                                         onClick: p,
                                         ariaLabel: d({ id: 'windows-menu.close' }),
