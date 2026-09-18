@@ -1,0 +1,867 @@
+/*
+ * Формы скопированы из DynamicNotch (NowPlayingNotchContent):
+ *  - свёрнуто (notch): 284×32, углы top≈7 / bottom≈11 — «продолжение» физического нота;
+ *    контент — обложка 24×24 (r5) слева, эквалайзер 6 полосок справа, паддинги 14/15.
+ *  - свёрнуто (island): 260×26, углы 13 — отдельный «остров» на внешнем дисплее.
+ *  - развёрнуто: base+200 × base+160 → 460×218 (с строкой громкости), углы 34/44.
+ *  - фон — чистый чёрный, обводка 1px rgba(255,255,255,.2) (NotchBackgroundSurface).
+ */
+
+.Notch_root {
+    --notch-bg: #000;
+    --notch-fg: rgba(255, 255, 255, 0.8);
+    --notch-fg-dim: rgba(255, 255, 255, 0.5);
+    --notch-fg-faint: rgba(255, 255, 255, 0.4);
+    --notch-stroke: rgba(255, 255, 255, 0.2);
+    --notch-accent: #ffdb4d;
+    --notch-ease: cubic-bezier(0.32, 0.72, 0, 1);
+
+    /* Корень сжат до капсулы: окно фиксированного размера, но приём событий —
+       только над видимой формой (игнор кликов переключается по mouseenter/leave) */
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    background: transparent;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+    color: var(--notch-fg);
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* === Капсула (свёрнуто) === */
+
+.Notch_pill {
+    box-sizing: border-box;
+    background: var(--notch-bg);
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    transition:
+        width 0.45s var(--notch-ease),
+        height 0.45s var(--notch-ease),
+        border-radius 0.45s var(--notch-ease);
+}
+
+/* notch-режим: внутренний дисплей макбука. Высота — не выше меню-бара (--pill-h). */
+.Notch_root_notch .Notch_pill {
+    width: 284px;
+    height: var(--pill-h, 32px);
+    /* верх — заподлицо с краем экрана, скругление только снизу */
+    border-radius: 0 0 11px 11px;
+}
+
+/* island-режим: внешний дисплей */
+.Notch_root_island .Notch_pill {
+    width: 260px;
+    height: var(--pill-h, 26px);
+    /* та же имитация выреза, что на макбуке: верх слит с краем */
+    border-radius: 0 0 11px 11px;
+}
+
+.Notch_root_expanded .Notch_pill {
+    cursor: default;
+}
+
+.Notch_root_expanded.Notch_root_notch .Notch_pill {
+    width: 360px;
+    height: 169px;
+    border-radius: 0 0 44px 44px;
+}
+
+.Notch_root_expanded.Notch_root_island .Notch_pill {
+    width: 360px;
+    height: 169px;
+    border-radius: 0 0 44px 44px;
+}
+
+/* Пока открыто краденое меню — корень занимает всё окно: клики по пунктам
+   доходят, а уход курсора закрывает меню. fixed+inset: тело без высоты,
+   проценты от него не растягиваются */
+html,
+body {
+    margin: 0;
+}
+
+.Notch_root_menu {
+    position: fixed;
+    inset: 0;
+}
+
+/* Свёрнутый контент капсулы: обложка слева, эквалайзер справа */
+.Notch_pillInner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    /* появление при сворачивании — без задержки */
+    transition: opacity 0.15s ease;
+}
+
+.Notch_root_notch .Notch_pillInner {
+    padding: 0 15px 0 14px;
+}
+
+.Notch_root_island .Notch_pillInner {
+    padding: 0 9px 0 7px;
+}
+
+/* Обложка в капсуле */
+.Notch_pillCover {
+    position: relative;
+    border-radius: 5px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: #1c1c1e;
+}
+
+.Notch_root_notch .Notch_pillCover {
+    width: 24px;
+    height: 24px;
+}
+
+.Notch_root_island .Notch_pillCover {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+}
+
+.Notch_pillCover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.Notch_root_expanded .Notch_pillInner {
+    opacity: 0;
+    pointer-events: none;
+    /* исчезновение при разворачивании — чуть с задержкой, чтобы не мигало */
+    transition: opacity 0.18s ease 0.1s;
+}
+
+/* Эквалайзер: 6 полосок, как LightweightNowPlayingEqualizerView */
+.Notch_eq {
+    display: flex;
+    align-items: flex-end;
+    gap: 1.5px;
+    height: 12px;
+    flex-shrink: 0;
+    opacity: 0.35;
+    transition: opacity 0.3s ease;
+}
+
+.Notch_eq span {
+    width: 2px;
+    border-radius: 1px;
+    background: rgba(255, 255, 255, 0.9);
+    height: 4px;
+}
+
+.Notch_eq_large {
+    gap: 2px;
+    height: 18px;
+}
+
+.Notch_eq_large span {
+    width: 2.7px;
+    height: 6px;
+}
+
+.Notch_eq_playing {
+    opacity: 1;
+}
+
+.Notch_eq_playing span:nth-child(1) {
+    animation: NotchEqSmall 0.9s ease-in-out infinite;
+}
+.Notch_eq_playing span:nth-child(2) {
+    animation: NotchEqSmall 0.7s ease-in-out 0.12s infinite;
+}
+.Notch_eq_playing span:nth-child(3) {
+    animation: NotchEqSmall 1.1s ease-in-out 0.24s infinite;
+}
+.Notch_eq_playing span:nth-child(4) {
+    animation: NotchEqSmall 0.8s ease-in-out 0.06s infinite;
+}
+.Notch_eq_playing span:nth-child(5) {
+    animation: NotchEqSmall 1s ease-in-out 0.18s infinite;
+}
+.Notch_eq_playing span:nth-child(6) {
+    animation: NotchEqSmall 0.85s ease-in-out 0.3s infinite;
+}
+
+.Notch_eq_large.Notch_eq_playing span:nth-child(1) {
+    animation-name: NotchEqLarge;
+}
+.Notch_eq_large.Notch_eq_playing span:nth-child(2) {
+    animation-name: NotchEqLarge;
+}
+.Notch_eq_large.Notch_eq_playing span:nth-child(3) {
+    animation-name: NotchEqLarge;
+}
+.Notch_eq_large.Notch_eq_playing span:nth-child(4) {
+    animation-name: NotchEqLarge;
+}
+.Notch_eq_large.Notch_eq_playing span:nth-child(5) {
+    animation-name: NotchEqLarge;
+}
+.Notch_eq_large.Notch_eq_playing span:nth-child(6) {
+    animation-name: NotchEqLarge;
+}
+
+@keyframes NotchEqSmall {
+    0%,
+    100% {
+        height: 4px;
+    }
+    50% {
+        height: 12px;
+    }
+}
+
+@keyframes NotchEqLarge {
+    0%,
+    100% {
+        height: 6px;
+    }
+    50% {
+        height: 18px;
+    }
+}
+
+/* === Панель (развёрнуто) === */
+
+/* Панель живёт внутри капсулы: клипается её формой (overflow+radius).
+   При сворачивании гаснет БЫСТРЕЕ, чем сжимается форма — кнопки не переживают окно. */
+.Notch_panel {
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    padding: 22px 30px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    opacity: 0;
+    pointer-events: none;
+    /* сворачивание: без задержки, быстро */
+    transition: opacity 0.12s ease;
+}
+
+.Notch_root_expanded .Notch_panel {
+    opacity: 1;
+    pointer-events: auto;
+    /* разворачивание: лёгкая задержка на раскрытие формы */
+    transition: opacity 0.25s ease 0.12s;
+}
+
+.Notch_panelHeader {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.Notch_cover {
+    position: relative;
+    width: 60px;
+    height: 60px;
+    border-radius: 10px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: #1c1c1e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.Notch_cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+/* HUD громкости поверх арта: арт затемнён пропорционально уровню
+   (0% — легко, 100% — почти белым), уровень — заполнением снизу вверх */
+.Notch_volumeHud {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: inherit;
+}
+
+/* заполнение снизу вверх; чем выше громкость, тем светлее заливка */
+.Notch_volumeFill {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: calc(var(--vol) * 100%);
+    background: rgba(255, 255, 255, calc(0.2 + var(--vol) * 0.3));
+    transition: height 0.12s ease, background 0.12s ease;
+}
+
+/* затемнение остальной части арта */
+.Notch_volumeHud::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.Notch_volumeIcon {
+    position: relative;
+    color: #fff;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+    animation: NotchVolumePop 0.18s ease;
+}
+
+@keyframes NotchVolumePop {
+    from {
+        transform: scale(0.7);
+        opacity: 0.4;
+    }
+}
+
+.Notch_meta {
+    flex: 1;
+    min-width: 0;
+}
+
+.Notch_metaTitle {
+    font-size: 16px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+/* Название трека — ссылка: открывает трек в основном окне */
+.Notch_titleLink {
+    flex: 1;
+    min-width: 0;
+    display: block;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+
+.Notch_titleLink:hover {
+    color: #fff;
+}
+
+/* Артист — ссылка: открывает страницу артиста в основном окне */
+.Notch_artistLink {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.15s ease;
+}
+
+.Notch_artistLink:hover {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+/* Признак 18+ после названия, перед тремя точками */
+.Notch_explicit {
+    flex-shrink: 0;
+    margin-left: 6px;
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.3px;
+    color: rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 3px;
+    padding: 2px 3px;
+}
+
+.Notch_metaSubtitle {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Прогресс */
+
+.Notch_progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 2px;
+}
+
+/* Метки времени — только при ховере, если не включено «всегда» (настройка мини-плеера) */
+.Notch_progressTime {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--notch-fg-faint);
+    width: 34px;
+}
+
+.Notch_progressTime:last-child {
+    text-align: right;
+}
+
+.Notch_progress:hover .Notch_progressTime,
+.Notch_progress_ts .Notch_progressTime {
+    opacity: 1;
+}
+
+.Notch_progressTrack {
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.18);
+    cursor: pointer;
+    position: relative;
+    touch-action: none;
+    transition: height 0.15s ease;
+}
+
+/* при ховере и перетаскивании трек чуть толще — есть за что тянуть */
+.Notch_progressTrack:hover,
+.Notch_progressTrack_drag {
+    height: 6px;
+}
+
+.Notch_progressFill {
+    height: 100%;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.9);
+}
+
+/* кружок-отметка: прячем без ховера, показываем при ховере и drag */
+.Notch_progressThumb {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    transform: translate(-50%, -50%) scale(0);
+    transition: transform 0.15s ease;
+    pointer-events: none;
+}
+
+.Notch_progressTrack:hover .Notch_progressThumb,
+.Notch_progressTrack_drag .Notch_progressThumb {
+    transform: translate(-50%, -50%) scale(1);
+}
+
+/* Кнопки: 42×42, транспорт по центру (шаг 25), вспомогательные — по краям */
+
+.Notch_controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 2px;
+}
+
+.Notch_controlsMain {
+    display: flex;
+    align-items: center;
+    /* плотный транспортный кластер [назад][play][вперёд], как в референсе */
+    gap: 10px;
+}
+
+.Notch_controlsSide {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.Notch_button {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--notch-fg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    transition:
+        opacity 0.15s ease,
+        background 0.15s ease;
+}
+
+.Notch_button:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.Notch_button:active {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.Notch_button_active {
+    color: var(--notch-accent);
+}
+
+/* Шаффл/повтор в неактивном состоянии — заметно серее основных */
+.Notch_button_dim {
+    color: var(--notch-fg-faint);
+}
+
+.Notch_button_dim:hover {
+    color: var(--notch-fg-dim);
+}
+
+/* Кнопка «⋯» — ворует полное меню трека из приложения */
+
+.Notch_menuButton {
+    width: 18px;
+    height: 18px;
+    margin-left: 6px;
+    flex-shrink: 0;
+    opacity: 0.55;
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
+}
+
+.Notch_menuButton:hover {
+    opacity: 1;
+}
+
+/* Украшенное родное меню — оверлей ниже капсулы, за рамками её формы */
+.Notch_menuList {
+    position: absolute;
+    top: 175px; /* ниже развёрнутой панели (169 + зазор) */
+    left: 50%;
+    transform: translateX(-50%);
+    width: 300px;
+    max-height: 520px;
+    overflow-y: auto;
+    background: #1c1c1e;
+    border-radius: 14px;
+    padding: 8px;
+    margin: 0;
+    list-style: none;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+    z-index: 10;
+    animation: NotchMenuIn 0.18s ease;
+}
+
+.Notch_menuItem {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 13.5px;
+    font-family: inherit;
+    padding: 8px 10px;
+    border-radius: 9px;
+    cursor: pointer;
+}
+
+.Notch_menuItem:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.Notch_menuItem_disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.Notch_menuItem_disabled:hover {
+    background: none;
+}
+
+.Notch_menuItemIcon {
+    width: 20px;
+    flex-shrink: 0;
+    display: flex;
+    justify-content: center;
+    opacity: 0.9;
+}
+
+.Notch_menuItemChecked {
+    flex-shrink: 0;
+    color: var(--notch-accent);
+    font-size: 12px;
+    margin-left: 6px;
+}
+
+.Notch_menuItemArrow {
+    flex-shrink: 0;
+    margin-left: 6px;
+    opacity: 0.5;
+    font-size: 10px;
+}
+
+/* Вложенное сабменю (плейлисты, шаринг) — прямо в нотче */
+.Notch_menuSubList {
+    margin: 2px 0 4px 18px;
+    padding: 0;
+    list-style: none;
+}
+
+/* Пока список крадётся — заметная заглушка */
+.Notch_menuLoading {
+    display: block;
+    padding: 8px 10px;
+    font-size: 13px;
+    color: var(--notch-fg-faint);
+    animation: NotchMenuLoading 1s ease-in-out infinite;
+}
+
+@keyframes NotchMenuLoading {
+    0%,
+    100% {
+        opacity: 0.4;
+    }
+    50% {
+        opacity: 0.9;
+    }
+}
+
+.Notch_menuItem_sub {
+    font-size: 13px;
+    padding: 6px 10px;
+}
+
+.Notch_menuItemLabel {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+@keyframes NotchMenuIn {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-6px);
+    }
+}
+
+/* Вспышка лайка/дизлайка — ровно на месте арта (слева):
+   зона за физическим нotaчем на встроенном дисплее мертва, в центр не вешаем */
+.Notch_flash {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding-left: 14px;
+    box-sizing: border-box;
+    background: var(--notch-bg);
+    z-index: 3;
+    animation: NotchFlashIn 0.22s ease;
+}
+
+.Notch_root_island .Notch_flash {
+    padding-left: 7px;
+}
+
+.Notch_flashHeart {
+    color: #fff;
+    display: flex;
+    position: relative;
+    animation: NotchHeartPop 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.Notch_flash_dislike .Notch_flashHeart {
+    animation: none;
+}
+
+.Notch_flashHalf {
+    display: inline-flex;
+}
+
+.Notch_flashHalf_left {
+    clip-path: inset(-30% 55% -30% -20%);
+}
+
+.Notch_flashHalf_right {
+    position: absolute;
+    left: 0;
+    top: 0;
+    clip-path: inset(-30% -20% -30% 55%);
+}
+
+.Notch_flash_dislike .Notch_flashHalf_left {
+    animation: NotchHalfL 0.7s cubic-bezier(0.32, 0.72, 0, 1) 0.25s forwards;
+}
+
+.Notch_flash_dislike .Notch_flashHalf_right {
+    animation: NotchHalfR 0.7s cubic-bezier(0.32, 0.72, 0, 1) 0.25s forwards;
+}
+
+@keyframes NotchFlashIn {
+    from {
+        opacity: 0;
+        transform: scale(0.6);
+    }
+}
+
+@keyframes NotchHeartPop {
+    0% {
+        transform: scale(0.4);
+        opacity: 0;
+    }
+    60% {
+        transform: scale(1.25);
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes NotchHalfL {
+    to {
+        transform: translateX(-5px) rotate(-12deg);
+        opacity: 0.85;
+    }
+}
+
+@keyframes NotchHalfR {
+    to {
+        transform: translateX(5px) rotate(12deg);
+        opacity: 0.85;
+    }
+}
+
+.Notch_root_expanded .Notch_flash {
+    display: none;
+}
+
+/* Снятие лайка: закрашенное сердце тает до рамки, рамка уходит в прозрачность.
+   Два слоя: контурное сердце (like_xs) снизу, закрашенное (liked_xs) сверху */
+.Notch_flash_unlike .Notch_flashHeart {
+    animation: none;
+}
+
+/* заливка тает первой; рамка позиционируется от .Notch_flashHeart (position: relative) */
+.Notch_flashFill {
+    animation: NotchHeartMelt 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.Notch_flashOutline {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.85);
+    animation: NotchHeartOutlineFade 1.1s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+/* закрашенное сердце истаивает, открывая рамку */
+@keyframes NotchHeartMelt {
+    0% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+    }
+}
+
+/* рамка держится, пока тает заливка, потом уходит в прозрачность */
+@keyframes NotchHeartOutlineFade {
+    0%,
+    50% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+    }
+}
+
+/* Снятие дизлайка: разлетевшиеся полупрозрачные половинки съезжаются
+   и собираются в целое сердце — зеркало разлёта дизлайка */
+.Notch_flash_undislike .Notch_flashHalf_left {
+    animation: NotchHalfAssembleL 0.5s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+.Notch_flash_undislike .Notch_flashHalf_right {
+    animation: NotchHalfAssembleR 0.5s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+@keyframes NotchHalfAssembleL {
+    from {
+        transform: translateX(-14px) rotate(-24deg);
+        opacity: 0;
+    }
+    to {
+        transform: none;
+        opacity: 1;
+    }
+}
+
+@keyframes NotchHalfAssembleR {
+    from {
+        transform: translateX(14px) rotate(24deg);
+        opacity: 0;
+    }
+    to {
+        transform: none;
+        opacity: 1;
+    }
+}
+
+/* Пин в правом верхнем углу развёрнутой панели — как у мини-плеера */
+.Notch_pinButton {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    display: none;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--notch-fg-dim);
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    z-index: 4;
+}
+
+.Notch_root_expanded .Notch_pinButton {
+    display: flex;
+}
+
+.Notch_pinButton:hover {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+/* закреплено — жёлтым в цвет Яндекса */
+.Notch_pinButton_active,
+.Notch_pinButton_active:hover {
+    color: var(--notch-accent);
+}

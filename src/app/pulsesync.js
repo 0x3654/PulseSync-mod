@@ -2145,7 +2145,424 @@ window.findCssRuleByPartialName = function (pName) {
                 const entityId = trackId ? createEntityId(trackId, albumId) : entity?.entityData?.meta?.id;
                 return entityId ? !!likeStore?.isTrackDisliked?.(entityId) : false;
             },
-            getState: () => getPlayerInstance()?.state,
+            // Best-effort: click the "..." track context-menu button in the player bar.
+            // Returns true when a plausible button was found and clicked.
+            openTrackMenu: () => {
+                const buttonAccessibleName = (button) => {
+                    const label = button.getAttribute('aria-label') || button.getAttribute('title') || button.textContent || '';
+                    return label.trim().toLowerCase();
+                };
+                const looksLikeMenuButton = (button) => {
+                    const name = buttonAccessibleName(button);
+                    if (name && /меню|menu|ещё|еще|more|прочее/.test(name)) return true;
+                    // Ellipsis icons are rendered as three dots (circles) inside the svg.
+                    const dots = button.querySelectorAll('svg circle, svg ellipse').length;
+                    return dots >= 3;
+                };
+                const fireClick = (button) => {
+                    const rect = button.getBoundingClientRect();
+                    const options = {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window,
+                        clientX: rect.left + rect.width / 2,
+                        clientY: rect.top + rect.height / 2,
+                    };
+                    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+                        button.dispatchEvent(new MouseEvent(type, options));
+                    }
+                };
+
+                // Точный якорь кнопки «⋯» в баре плеера; эвристика — запасной путь
+                // (она могла промахнуться и нажать пункт меню вместо кнопки)
+                const pinned = document.querySelector('button[data-test-id="PLAYERBAR_DESKTOP_CONTEXT_MENU_BUTTON"]');
+                const menuButton = pinned
+                    ? pinned
+                    : Array.from(document.querySelectorAll('button')).reverse().find(looksLikeMenuButton);
+                if (!menuButton) return false;
+
+                menuButton.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                // теми же событиями, что и пункты меню: голый MouseEvent триггер
+                // игнорирует (особенно при простое плеера)
+                const h = window.pulsesyncApi.__trackMenuHelpers();
+                h.hover(menuButton);
+                window.setTimeout(() => h.fire(menuButton), 60);
+                return true;
+            },
+            // Хелперы для кражи родного меню нотч-плеером (кэшируются). Меню на время
+// кражи/кликов скрывается через visibility — для пользователя оно рисуется в нотче.
+            __trackMenuHelpers: () => {
+                if (window.__notchTrackMenuHelpers) return window.__notchTrackMenuHelpers;
+                const STYLE_ID = 'pulsesync-notch-menu-hider';
+                const point = (el) => {
+                    const rect = el.getBoundingClientRect();
+                    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+                };
+                // некоторые пункты игнорируют MouseEvent с типом pointer* — нужен PointerEvent
+                const mkEvent = (type, p) => {
+                    const base = { bubbles: true, cancelable: true, view: window, clientX: p.x, clientY: p.y };
+                    if (type.startsWith('pointer') && typeof PointerEvent === 'function') {
+                        return new PointerEvent(type, { ...base, pointerId: 1, pointerType: 'mouse', isPrimary: true });
+                    }
+                    return new MouseEvent(type, base);
+                };
+                const helpers = {
+                    lastActivityAt: 0,
+                    pendingUnhide: 0,
+                    setHidden(hidden) {
+                        if (hidden) {
+                            helpers.lastActivityAt = Date.now();
+                            // новая кража отменяет отложенное снятие скрытия
+                            if (helpers.pendingUnhide) {
+                                window.clearTimeout(helpers.pendingUnhide);
+                                helpers.pendingUnhide = 0;
+                            }
+                        }
+                        let style = document.getElementById(STYLE_ID);
+                        if (hidden && !style) {
+                            style = document.createElement('style');
+                            style.id = STYLE_ID;
+                            style.textContent = '[role=menu]{visibility:hidden !important}';
+                            document.head.appendChild(style);
+                        } else if (!hidden && style) {
+                            style.remove();
+                        }
+                    },
+                    setHiddenSoon(delay) {
+                        if (helpers.pendingUnhide) window.clearTimeout(helpers.pendingUnhide);
+                        helpers.pendingUnhide = window.setTimeout(() => {
+                            helpers.pendingUnhide = 0;
+                            helpers.setHidden(false);
+                        }, delay);
+                    },
+                    hover(el) {
+                        const p = point(el);
+                        for (const type of ['pointermove', 'mouseover', 'mouseenter', 'mousemove']) {
+                            el.dispatchEvent(mkEvent(type, p));
+                        }
+                    },
+                    fire(el) {
+                        const p = point(el);
+                        for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+                            el.dispatchEvent(mkEvent(type, p));
+                        }
+                    },
+                    visible(el) {
+                        const rect = el.getBoundingClientRect();
+                        return rect.width > 0 && rect.height > 0;
+                    },
+                    label(el) {
+                        return (el.getAttribute('aria-label') || el.textContent || '').trim();
+                    },
+                    readItems(menu, isRootMenu) {
+                        return [...menu.querySelectorAll('[role=menuitem], [role=menuitemcheckbox]')]
+                            .map((el) => {
+                                const role = el.getAttribute('role');
+                                const useEl = el.querySelector('svg use');
+                                const iconHref = useEl ? useEl.getAttribute('xlink:href') || useEl.getAttribute('href') || '' : '';
+                                const item = {
+                                    label: helpers.label(el),
+                                    // чекбоксы (лайк, повтор...) исполняем нативным кликом БЕЗ
+                                    // фокуса окна — какой именно чекбокс, решает приложение
+                                    kind: role === 'menuitemcheckbox' ? 'toggle' : 'item',
+                                    toggle: null,
+                                    disabled: el.getAttribute('aria-disabled') === 'true',
+                                    // имя иконки из спрайта (#liked_xxs → liked_xxs) — рендерим своим спрайтом
+                                    icon: iconHref.split('#')[1] || null,
+                                    hasPopup: !!el.getAttribute('aria-haspopup'),
+                                    children: null,
+                                };
+                                return item;
+                            })
+                            .filter((item) => item.label);
+                    },
+                };
+                window.__notchTrackMenuHelpers = helpers;
+                return helpers;
+            },
+            // Открыть родное меню невидимо и прочитать пункты (в main → нотч);
+            // сабменю родителей дочитываем следом с обновлением списка.
+            stealTrackMenu: () => {
+                const h = window.pulsesyncApi.__trackMenuHelpers();
+                // кэш прочитанных сабменю: список в нотче мгновенный, enrich
+                // обновит его следом (stale-while-revalidate)
+                const subCache = (window.__notchSubMenuCache ??= new Map());
+                // новая кража отменяет пуши предыдущей (клиент нотча не должен
+                // получать вперемешку данные двух сессий)
+                const generation = (window.__notchStealGeneration = (window.__notchStealGeneration || 0) + 1);
+                const push = (items) => {
+                    if (generation === window.__notchStealGeneration) {
+                        window.desktopEvents?.send?.('NOTCH_MENU_ITEMS', items);
+                    }
+                };
+                const enrichWithSubmenus = (items) => {
+                    const parents = items.filter((item) => item.hasPopup);
+                    if (!parents.length) return;
+                    const enrichGeneration = generation;
+                    const aborted = () => enrichGeneration !== window.__notchStealGeneration;
+                    window.__notchMenuBusy = true;
+                    let index = 0;
+                    // прочитанные сабменю помечаем, чтобы не отдать их следующему родителю
+                    const claimedSubs = new Set();
+                    const step = () => {
+                        if (aborted()) {
+                            window.__notchMenuBusy = false;
+                            return;
+                        }
+                        if (index >= parents.length) {
+                            window.__notchMenuBusy = false;
+                            return;
+                        }
+                        const parent = parents[index];
+                        index += 1;
+                        const root = document.querySelector('[role=menu]');
+                        const el = root ? [...root.querySelectorAll('[role=menuitem]')].find((e) => h.label(e) === parent.label) : null;
+                        if (!el) {
+                            step();
+                            return;
+                        }
+                        // радикс сам закрывает прошлое сабменю при переходе ховера.
+                        // Сабменю монтируется с задержкой (на холодном приложении >500мс) —
+                        // ховерим с повторами и поллим его появление, а не ждём фикс-таймаут
+                        parent.loading = true;
+                        const getSub = () => [...document.querySelectorAll('[role=menu]')].slice(1).find((m) => !claimedSubs.has(m));
+                        const waitForSub = (cb, tries = 0) => {
+                            const sub = getSub();
+                            if (sub) {
+                                cb(sub);
+                                return;
+                            }
+                            if (tries > 30) {
+                                // сабменю не смонтировалось — пропускаем родителя
+                                parent.loading = false;
+                                step();
+                                return;
+                            }
+                            if (tries % 3 === 0) h.hover(el);
+                            window.setTimeout(() => waitForSub(cb, tries + 1), 250);
+                        };
+                        h.hover(el);
+                        waitForSub((sub) => {
+                            // пункты сабменю лениво догружаются — ждём стабилизации списка
+                            const scrollerOf = (sub) => [sub, ...sub.children].find((node) => node.scrollHeight > node.clientHeight + 4) || sub;
+                            let tick = 0;
+                            const settle = (sub, lastCount, sameTicks, deadline) => {
+                                try {
+                                    settleTick(sub, lastCount, sameTicks, deadline);
+                                } catch (e) {
+                                    // цепочка молча умирала и спиннер висел вечно
+                                    finish(sub);
+                                }
+                            };
+                            const settleTick = (sub, lastCount, sameTicks, deadline) => {
+                                if (aborted()) {
+                                    window.__notchMenuBusy = false;
+                                    return;
+                                }
+                                if (Date.now() > deadline) {
+                                    pumpScroll(sub, 0, new Map());
+                                    return;
+                                }
+                                tick += 1;
+                                // догрузка живёт пока «курсор» над родителем — поддерживаем ховер
+                                if (tick % 3 === 0) h.hover(el);
+                                const current = h.readItems(sub, false);
+                                const count = current.length;
+                                // пушим инкрементально — список растёт на глазах
+                                if (count !== lastCount && count > 0) {
+                                    parent.children = current;
+                                    push(items);
+                                }
+                                if (count === lastCount && count > 0) {
+                                    sameTicks += 1;
+                                } else {
+                                    sameTicks = 0;
+                                }
+                                if (sameTicks >= 2) {
+                                    pumpScroll(sub, 0, new Map());
+                                    return;
+                                }
+                                window.setTimeout(() => settle(sub, count, sameTicks, deadline), 150);
+                            };
+                            const pumpScroll = (sub, pumps, collected) => {
+                                if (aborted()) {
+                                    window.__notchMenuBusy = false;
+                                    return;
+                                }
+                                h.readItems(sub, false).forEach((item) => collected.set(item.label, item));
+                                const scroller = scrollerOf(sub);
+                                if (pumps > 20 || scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) {
+                                    scroller.scrollTop = 0;
+                                    finish(sub, collected);
+                                    return;
+                                }
+                                scroller.scrollTop = Math.min(scroller.scrollTop + scroller.clientHeight, scroller.scrollHeight);
+                                window.setTimeout(() => pumpScroll(sub, pumps + 1, collected), 280);
+                            };
+                            const finish = (sub, collected) => {
+                                const items2 = collected ?? new Map(h.readItems(sub, false).map((item) => [item.label, item]));
+                                parent.children = [...items2.values()];
+                                parent.loading = false;
+                                subCache.set(parent.label, parent.children);
+                                push(items);
+                                step();
+                            };
+                            claimedSubs.add(sub);
+                            // в скрытом окне таймеры троттлятся — дедлайн длиннее
+                            const deadline = Date.now() + (document.visibilityState === 'visible' ? 2500 : 9000);
+                            settle(sub, -1, 0, deadline);
+                        });
+                    };
+                    step();
+                };
+
+                h.setHidden(true);
+                if (!document.querySelector('[role=menu]')) {
+                    window.pulsesyncApi.openTrackMenu();
+                }
+                // Radix монтирует пункты прогрессивно — ждём стабилизации списка,
+                // иначе пушится первый неполный кадр (1 пункт из 14)
+                let lastCount = -1;
+                let stableTicks = 0;
+                let tries = 0;
+                let firstSeenAt = 0;
+                const timer = window.setInterval(() => {
+                    tries += 1;
+                    const root = document.querySelector('[role=menu]');
+                    const items = root ? h.readItems(root, true) : null;
+                    const count = items ? items.length : 0;
+                    if (count > 0 && !firstSeenAt) firstSeenAt = Date.now();
+                    stableTicks = count === lastCount && count > 0 ? stableTicks + 1 : 0;
+                    lastCount = count;
+                    const settled = count > 0 && stableTicks >= 2 && firstSeenAt && Date.now() - firstSeenAt >= 300;
+                    if (settled || tries > 20) {
+                        window.clearInterval(timer);
+                        if (items) {
+                            items.forEach((item) => {
+                                if (item.hasPopup && subCache.has(item.label)) {
+                                    item.children = subCache.get(item.label);
+                                    item.loading = false;
+                                }
+                            });
+                        }
+                        // пустой список не шлём: неудачная кража не должна
+                        // затирать уже доставленные пункты
+                        if (items && items.length > 0) {
+                            push(items);
+                            enrichWithSubmenus(items);
+                        }
+                        // страховка: неиспользованное меню тихо закрываем и раскрываем
+                        window.setTimeout(() => {
+                            if (Date.now() - window.pulsesyncApi.__trackMenuHelpers().lastActivityAt >= 25000) {
+                                window.pulsesyncApi.closeTrackMenu();
+                            }
+                        }, 25050);
+                    }
+                }, 100);
+            },
+            // Нажать пункт меню (вложенный — сначала раскрыв сабменю родителя ховером).
+            clickTrackMenuItem: (label, parentLabel, kind) => {
+                const h = window.pulsesyncApi.__trackMenuHelpers();
+                // клик важнее дочитки: прерываем enrich, меню освобождается
+                window.__notchStealGeneration = (window.__notchStealGeneration || 0) + 1;
+                window.__notchMenuBusy = false;
+                const findEverywhere = () =>
+                    [...document.querySelectorAll('[role=menu] [role=menuitem], [role=menu] [role=menuitemcheckbox]')].filter(
+                        (el) => h.visible(el) && h.label(el) === String(label),
+                    );
+                const findTop = (lbl) => {
+                    const root = document.querySelector('[role=menu]');
+                    return root ? [...root.querySelectorAll('[role=menuitem]')].find((el) => h.label(el) === String(lbl)) : null;
+                };
+                let submenuPoked = false;
+                let firstSeenAt = 0;
+                let reported = false;
+                let lastOpenAt = 0;
+                const act = () => {
+                    if (reported) return true;
+                    // окно могли только что восстановить — ждём видимости документа
+                    if (document.visibilityState !== 'visible') {
+                        firstSeenAt = 0;
+                        return false;
+                    }
+                    // фокус окна закрывает меню — переоткрываем с рейт-лимитом
+                    if (!document.querySelector('[role=menu]')) {
+                        if (Date.now() - lastOpenAt > 800) {
+                            lastOpenAt = Date.now();
+                            window.pulsesyncApi.openTrackMenu();
+                        }
+                        firstSeenAt = 0;
+                        return false;
+                    }
+                    // вложенный пункт: сначала раскрываем сабменю родителя
+                    if (parentLabel && !submenuPoked) {
+                        const parent = findTop(parentLabel);
+                        if (parent) {
+                            h.hover(parent);
+                            submenuPoked = true;
+                        }
+                        return false;
+                    }
+                    const hit = findEverywhere()[0];
+                    if (!hit) {
+                        firstSeenAt = 0;
+                        return false;
+                    }
+                    // пункт должен провисеть на месте: после репрайза меню анимируется
+                    if (!firstSeenAt) {
+                        firstSeenAt = Date.now();
+                        return false;
+                    }
+                    if (Date.now() - firstSeenAt < 120) return false;
+                    reported = true;
+                    h.hover(hit);
+                    window.setTimeout(() => {
+                        const hit2 = findEverywhere()[0];
+                        if (hit2) h.fire(hit2);
+                        // чекбокс не закрывает меню сам — Radix держит его открытым,
+                        // и застрявшее меню ломает дальнейшие кражи; закрываем явно.
+                        // Обычные пункты закрывают меню сами — только снимаем скрытие.
+                        if (kind === 'toggle') {
+                            window.setTimeout(() => {
+                                for (const type of ['keydown', 'keyup']) {
+                                    document.dispatchEvent(new KeyboardEvent(type, { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }));
+                                }
+                                h.setHiddenSoon(450);
+                            }, 500);
+                        } else {
+                            h.setHiddenSoon(800);
+                        }
+                    }, 80);
+                    return true;
+                };
+
+                h.setHidden(true);
+                lastOpenAt = Date.now();
+                // меню обычно уже открыто кражей — повторный клик по «⋯» его ЗАКРЫЛ бы
+                if (!document.querySelector('[role=menu]')) {
+                    window.pulsesyncApi.openTrackMenu();
+                }
+                let tries = 0;
+                const timer = window.setInterval(() => {
+                    tries += 1;
+                    if (act() || tries > 45) {
+                        window.clearInterval(timer);
+                        // не оставляем скрытие даже если пункт не нашли/не нажали
+                        if (tries > 45) h.setHiddenSoon(300);
+                    }
+                }, 150);
+                return false;
+            },
+            // снять скрытие меню, не закрывая его (Escape прихлопнул бы диалог)
+            unhideTrackMenu: () => window.pulsesyncApi.__trackMenuHelpers().setHidden(false),
+closeTrackMenu: () => {
+                for (const type of ['keydown', 'keyup']) {
+                    document.dispatchEvent(new KeyboardEvent(type, { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }));
+                }
+                // с задержкой: мгновенный unhide показывал бы затухающее меню
+                window.pulsesyncApi.__trackMenuHelpers().setHiddenSoon(450);
+            },
+getState: () => getPlayerInstance()?.state,
             isPlaying: () => getPlayerInstance()?.state?.playerState?.status?.value === 'playing',
             getCurrentTrack: () => getPlayerInstance()?.state?.queueState?.currentEntity?.value?.entity?.entityData?.meta,
             getQueue: () => getPlayerInstance()?.state?.queueState?.entityList?.value,
@@ -2309,10 +2726,33 @@ window.findCssRuleByPartialName = function (pName) {
         });
     };
 
+    // Приложение пушит PLAYER_STATE только при смене своих зависимостей — лайк
+    // при паузе доезжает только со следующим событием. Шлём лайк-стейт нотч-плееру
+    // сами, лёгким поллингом стора и отправкой только при изменении.
+    const startNotchLikeStatePolling = () => {
+        let last = null;
+        window.setInterval(() => {
+            const api = window.pulsesyncApi;
+            if (!api?.isTrackLiked) return;
+            const trackId = api.getCurrentTrack()?.id ?? null;
+            const next = {
+                trackId,
+                isLiked: api.isTrackLiked() === true,
+                isDisliked: api.isTrackDisliked() === true,
+            };
+            const changed = !last || last.isLiked !== next.isLiked || last.isDisliked !== next.isDisliked || last.trackId !== next.trackId;
+            if (changed) {
+                last = next;
+                window.desktopEvents?.send?.('NOTCH_LIKE_STATE', next);
+            }
+        }, 1000);
+    };
+
     ensurePulseSyncTrackQualityApi();
     installNativeAudioOutputGainMuteMonitor();
     installYaspNativeAudioHooks();
     ensureApi();
     registerDesktopListener();
     requestInitialAddonSettingsSnapshot();
+    startNotchLikeStatePolling();
 })();

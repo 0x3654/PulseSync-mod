@@ -553,15 +553,23 @@
                             var e;
                             null == (e = window.desktopEvents) || e.send(u.E.TOGGLE_MINIPLAYER);
                         }, []),
+                        onNotchPlayerToggle = (0, n.useCallback)(() => {
+                            var e;
+                            null == (e = window.desktopEvents) || e.send(u.E.TOGGLE_NOTCHPLAYER);
+                        }, []),
                         E = (0, n.useCallback)((e) => {
                             if (e.target.closest('button')) return;
                             var t;
                             null == (t = window.desktopEvents) || t.send(u.E.WINDOW_MAXIMIZE);
                         }, []),
                         [w, N] = (0, n.useState)(window.HIDE_PULSESYNC_VERSION_IN_TITLEBAR?.() ?? !1);
+                    let [notchButtonVisible, setNotchButtonVisible] = (0, n.useState)(
+                        window.IS_MACOS && window.nativeSettings?.get?.('modSettings.notchplayer.enabled') === !0,
+                    );
                     (0, n.useEffect)(() => {
                         let e = (e, t, a) => {
                                 'modSettings.window.hidePulseSyncVersionInTitleBar' === t && N(a);
+                                'modSettings.notchplayer.enabled' === t && setNotchButtonVisible(window.IS_MACOS && a === !0);
                             },
                             t = window.desktopEvents?.on?.('NATIVE_STORE_UPDATE', e);
                         return () => {
@@ -576,7 +584,31 @@
                             (0, r.jsxs)(r.Fragment, {
                                 children: [
                                     !w && (0, r.jsx)('span', { className: c().pulseText, children: 'PulseSync '.concat(window.PULSE_VERSION) }),
+                                    notchButtonVisible &&
                                     (0, r.jsx)(h, {
+                                        onClick: onNotchPlayerToggle,
+                                        ariaLabel: 'notchplayer',
+                                        withSecondaryColor: t,
+                                        children: (0, r.jsxs)('svg', {
+                                            width: '12',
+                                            height: '12',
+                                            viewBox: '0 0 12 12',
+                                            xmlns: 'http://www.w3.org/2000/svg',
+                                            className: (0, i.$)(c().icon, { [c().icon_withSecondaryColor]: t }),
+                                            children: [
+                                                (0, r.jsx)('path', {
+                                                    d: 'M2.5 2H4.5V3.5H7.5V2H9.5C10.3284 2 11 2.67157 11 3.5V9.5C11 10.3284 10.3284 11 9.5 11H2.5C1.67157 11 1 10.3284 1 9.5V3.5C1 2.67157 1.67157 2 2.5 2Z',
+                                                    fill: 'currentColor',
+                                                }),
+                                                (0, r.jsx)('path', {
+                                                    d: 'M4 6H8V8H4V6Z',
+                                                    fill: 'currentColor',
+                                                    opacity: '0.55',
+                                                }),
+                                            ],
+                                        }),
+                                    }),,
+                                                                        (0, r.jsx)(h, {
                                         onClick: onMiniPlayerToggle,
                                         ariaLabel: 'miniplayer',
                                         withSecondaryColor: t,
@@ -817,6 +849,7 @@
                     (e.REPOSITORY_META_UPDATED = 'REPOSITORY_META_UPDATED'),
                     (e.SAVE_FILE_TO_LOCAL_DISK = 'SAVE_FILE_TO_LOCAL_DISK'),
                     (e.TOGGLE_MINIPLAYER = 'TOGGLE_MINIPLAYER'),
+                    (e.TOGGLE_NOTCHPLAYER = 'TOGGLE_NOTCHPLAYER'),
                     (e.PULSESYNC_API = 'PULSESYNC_API'),
                     (e.GET_CURRENT_TRACK = 'GET_CURRENT_TRACK'),
                     (e.DOWNLOAD_CURRENT_TRACK = 'DOWNLOAD_CURRENT_TRACK'),
@@ -14649,6 +14682,7 @@
                                     l = e.state.currentContext.value?.availableActions;
                                 window.desktopEvents?.send?.(il.E.PLAYER_STATE, {
                                     status: e.state.playerState.status.value,
+                                    volume: e.state.playerState.exponentVolume?.value ?? e.state.playerState.volume?.value,
                                     isPlaying: 'playing' === e.state.playerState.status.value,
                                     canMoveForward: l?.moveForward?.value,
                                     canMoveBackward: l?.moveBackward?.value,
