@@ -422,6 +422,14 @@ function NotchApp() {
 
     return (
         <div className={rootClass} style={{ '--pill-h': `${PILL_HEIGHT}px` }} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
+            {/* Пасхалка: клик-зона за физическим вырезом, текст прозрачный (жёлтый при ховере) */}
+            <button
+                type="button"
+                className="Notch_openMainLink"
+                onClick={() => window.desktopEvents?.send('SHOW_MAIN_WINDOW')}
+            >
+                открыть YM
+            </button>
             {/* Капсула — морфящаяся форма; панель клипается ею при сжатии */}
             <div className="Notch_pill" onMouseEnter={onPillMouseEnter} onMouseLeave={onPillMouseLeave}>
                 {/* Свёрнуто: обложка слева, эквалайзер справа */}

@@ -165,8 +165,12 @@ class NotchPlayer {
             maximizable: false,
             fullscreenable: false,
             skipTaskbar: true,
+            // пустой title — чтобы окно не появлялось в списке окон дока (правый клик)
+            title: '',
+            // macOS: skipTaskbar прячет приложение из дока, если это единственное окно —
             focusable: false,
             alwaysOnTop: true,
+            visibleOnAllWorkspaces: true,
             backgroundColor: '#00000000',
             webPreferences: {
                 devTools: true,
@@ -178,6 +182,14 @@ class NotchPlayer {
         });
 
         win.setAlwaysOnTop(true, 'screen-saver');
+        // macOS: skipTaskbar на нотче прячет приложение из дока, когда основное окно
+        // закрыто — восстанавливаем иконку явно (пока без настройки, всегда показываем)
+        if (process.platform === 'darwin' && typeof electron.app.dock?.show === 'function') {
+            try { electron.app.dock.show(); } catch {}
+        }
+        // visibleOnAllWorkspaces как опция конструктора не работает с transparent
+        // на macOS — вызываем явно после показа окна
+        win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
         // капсула не должна занимать слот в Mission Control / жесте «все окна»
         if (typeof win.setHiddenInMissionControl === 'function') {
             win.setHiddenInMissionControl(true);
@@ -193,6 +205,12 @@ class NotchPlayer {
         const devUrl = 'http://localhost:5173/notch.html';
         const builtIndex = path.join(__dirname, '..', 'miniplayer', 'renderer', 'notch.html');
         const query = { mode, mbh: String(menuBarHeight) };
+
+        // после загрузки: сбросить title (HTML может его перезаписать) и
+        // повторно скрыть из списка окон дока
+        win.once('ready-to-show', () => {
+            try { win.setTitle(''); } catch {}
+        });
 
         // loadFile/loadURL возвращают промис: окно могут снести во время загрузки
         // (быстрый тогл, смена дисплея) — реджект глушим, это ожидаемый сценарий

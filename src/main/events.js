@@ -863,6 +863,24 @@ const handleApplicationEvents = (window) => {
         eventsLogger.info('Event received', events_js_1.Events.WINDOW_MAXIMIZE);
         (0, toggleMaximize_js_1.toggleMaximize)(window);
     });
+    // из нотча: «открыть YM» — показать главное окно на активном вирт столе
+    electron_1.ipcMain.on('SHOW_MAIN_WINDOW', () => {
+        if (!mainWindow) return;
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        if (process.platform === 'darwin' && !mainWindow.isVisible()) {
+            // macOS: show() открывает на столе, где окно было последний раз —
+            // телепортируем на активный через временный visibleOnAllWorkspaces
+            mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
+            mainWindow.show();
+            mainWindow.focus();
+            setTimeout(() => {
+                if (!mainWindow.isDestroyed()) mainWindow.setVisibleOnAllWorkspaces(false);
+            }, 100);
+        } else {
+            mainWindow.show();
+            mainWindow.focus();
+        }
+    });
     electron_1.ipcMain.on(events_js_1.Events.WINDOW_CLOSE, () => {
         eventsLogger.info('Event received', events_js_1.Events.WINDOW_CLOSE);
         if ([platform_js_1.Platform.WINDOWS, platform_js_1.Platform.LINUX].includes(deviceInfo_js_1.devicePlatform)) {
