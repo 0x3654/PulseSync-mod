@@ -1,0 +1,606 @@
+'use strict';
+console.warn('[PRELOAD-CHECK] main/lib/preload.js EXECUTED');
+Object.defineProperty(exports, '__esModule', { value: true });
+const electron_1 = require('electron');
+const fs = require('fs');
+const path = require('path');
+const config_js_1 = require('../config.js');
+const getInitialTheme_js_1 = require('./getInitialTheme.js');
+const deviceInfo_js_1 = require('./deviceInfo.js');
+const theme_js_1 = require('../types/theme.js');
+const playerActions_js_1 = require('../types/playerActions.js');
+const hostnamePatterns_js_1 = require('../constants/hostnamePatterns.js');
+const deviceInfo = (0, deviceInfo_js_1.getDeviceInfo)();
+const store_js_1 = require('./store.js');
+const events_js_1 = require('../types/events.js');
+const events = require('node:events');
+const PULSESYNC_TITLEBAR_STYLE_ID = 'pulsesync-non-premium-titlebar-guard';
+const PULSESYNC_TITLEBAR_TEXT_CLASS = 'TitleBar_pulseText__FhYv';
+const PULSESYNC_TITLEBAR_TEXT_SELECTOR =
+    '[class*="TitleBar_root"] > span[class*="TitleBar_pulseText"], [class*="TitleBar_root"] > .TitleBar_pulseText__FhYv, [class*="TitleBar_root"] > [class*="TitleBar_pulseText"]';
+const PULSESYNC_FOREIGN_TITLEBAR_SELECTOR =
+    '[class*="TitleBar_root"] > [id*="custom-titlebar"], [class*="TitleBar_root"] > [class*="custom-titlebar"], [class*="TitleBar_root"] > [data-titlebar-replacement]';
+let cachedTitlebarVisibilitySettings = null;
+const getIsPremiumUserSync = () => {
+    try {
+        return Boolean(electron_1.ipcRenderer.sendSync('isPremiumUserSync'));
+    } catch (error) {
+        return false;
+    }
+};
+const getTitlebarVisibilitySettings = () => {
+    if (cachedTitlebarVisibilitySettings) {
+        return cachedTitlebarVisibilitySettings;
+    }
+
+    const hidePulseSyncVersion = Boolean(store_js_1.getModSettings()?.window?.hidePulseSyncVersionInTitleBar);
+    const isPremium = getIsPremiumUserSync();
+    cachedTitlebarVisibilitySettings = {
+        hidePulseSyncVersion,
+        isPremium,
+        shouldHidePulseSyncVersion: hidePulseSyncVersion && isPremium,
+    };
+    return cachedTitlebarVisibilitySettings;
+};
+const resetTitlebarVisibilitySettings = () => {
+    cachedTitlebarVisibilitySettings = null;
+};
+const registerApplicationInitFinishedEvent = () => {
+    if (window.__pulsesyncApplicationInitFinishedRegistered) {
+        return;
+    }
+    window.__pulsesyncApplicationInitFinishedRegistered = true;
+
+    const splashSelector = '[class*="SplashScreen_root"]';
+    const shimmerSelector = '[class*="MainSuspenseLoader_icon"]';
+    const splashMountGraceMs = 1000;
+    const shimmerMaxWaitMs = 10000;
+    const stableWaitMs = 500;
+    const observerCleanupMs = 45000;
+    const startedAt = Date.now();
+    let sent = false;
+    let observedSplash = false;
+    let splashFinishedAt = null;
+    let stableTimer = null;
+    let observerCheckTimer = null;
+    let splashMountTimer = null;
+    let shimmerMaxWaitTimer = null;
+    let cleanupTimer = null;
+    let observer = null;
+
+try{electron_1.contextBridge.exposeInMainWorld('__F0_L68',68)}catch(e){}
+    const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return false;
+
+try{electron_1.contextBridge.exposeInMainWorld('__F1_L72',72)}catch(e){}
+        const style = window.getComputedStyle(element);
+        return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) !== 0;
+    };
+    const hasSplash = () => {
+        const splashElements = Array.from(window.document.querySelectorAll(splashSelector));
+        if (splashElements.length > 0) {
+            observedSplash = true;
+        }
+
+        return splashElements.some(isVisible);
+    };
+    const hasVisibleShimmer = () => {
+        return Array.from(window.document.querySelectorAll(shimmerSelector)).some((element) => {
+            return !element.closest(splashSelector) && isVisible(element);
+        });
+    };
+    const clearStableTimer = () => {
+        if (!stableTimer) return;
+        clearTimeout(stableTimer);
+        stableTimer = null;
+    };
+    const clearObserverCheckTimer = () => {
+        if (!observerCheckTimer) return;
+        clearTimeout(observerCheckTimer);
+        observerCheckTimer = null;
+    };
+    const cleanupApplicationInitFinishedWatchers = () => {
+        clearStableTimer();
+        clearObserverCheckTimer();
+        splashMountTimer && clearTimeout(splashMountTimer);
+        shimmerMaxWaitTimer && clearTimeout(shimmerMaxWaitTimer);
+        cleanupTimer && clearTimeout(cleanupTimer);
+        splashMountTimer = null;
+        shimmerMaxWaitTimer = null;
+        cleanupTimer = null;
+        observer?.disconnect();
+        observer = null;
+        window.removeEventListener('load', checkApplicationInitFinished);
+        window.document.removeEventListener('readystatechange', checkApplicationInitFinished);
+    };
+    const sendApplicationInitFinished = () => {
+        if (sent) return;
+
+        sent = true;
+        cleanupApplicationInitFinishedWatchers();
+        electron_1.ipcRenderer.send(events_js_1.Events.APPLICATION_INIT_FINISHED);
+    };
+    const checkApplicationInitFinished = () => {
+        if (sent || !window.document.body) return;
+
+        if (hasSplash()) {
+            splashFinishedAt = null;
+            clearStableTimer();
+            return;
+        }
+
+try{electron_1.contextBridge.exposeInMainWorld('__F2_L128',128)}catch(e){}
+        if (!observedSplash && Date.now() - startedAt < splashMountGraceMs) {
+            return;
+        }
+
+try{electron_1.contextBridge.exposeInMainWorld('__F3_L132',132)}catch(e){}
+        if (splashFinishedAt === null) {
+            splashFinishedAt = Date.now();
+        }
+
+        const waitedForShimmerMs = Date.now() - splashFinishedAt;
+        if (hasVisibleShimmer() && waitedForShimmerMs < shimmerMaxWaitMs) {
+            clearStableTimer();
+            return;
+        }
+
+        if (stableTimer) return;
+        stableTimer = setTimeout(() => {
+            if (hasSplash()) return;
+            if (hasVisibleShimmer() && Date.now() - splashFinishedAt < shimmerMaxWaitMs) return;
+
+            sendApplicationInitFinished();
+        }, stableWaitMs);
+    };
+try{electron_1.contextBridge.exposeInMainWorld('__F4_L150',150)}catch(e){}
+    const scheduleApplicationInitFinishedCheck = () => {
+        if (sent || observerCheckTimer) return;
+
+        observerCheckTimer = setTimeout(() => {
+            observerCheckTimer = null;
+            checkApplicationInitFinished();
+        }, 50);
+    };
+    const startObserver = () => {
+        const rootElement = window.document.documentElement;
+        if (!rootElement) {
+            setTimeout(startObserver, 0);
+            return;
+        }
+
+        observer = new MutationObserver(scheduleApplicationInitFinishedCheck);
+        observer.observe(rootElement, {
+            attributes: true,
+            attributeFilter: ['class', 'style', 'hidden'],
+            childList: true,
+            subtree: true,
+        });
+        checkApplicationInitFinished();
+    };
+
+    window.addEventListener('load', checkApplicationInitFinished, { once: true });
+    window.document.addEventListener('readystatechange', checkApplicationInitFinished);
+    startObserver();
+    splashMountTimer = setTimeout(checkApplicationInitFinished, splashMountGraceMs);
+    shimmerMaxWaitTimer = setTimeout(checkApplicationInitFinished, splashMountGraceMs + shimmerMaxWaitMs);
+    cleanupTimer = setTimeout(cleanupApplicationInitFinishedWatchers, observerCleanupMs);
+    requestAnimationFrame(checkApplicationInitFinished);
+};
+const nativeStoreUpdateListeners = new Set();
+const registerNativeStoreUpdateCacheSync = () => {
+    if (window.__pulsesyncNativeStoreUpdateCacheSyncRegistered) {
+        return;
+    }
+    window.__pulsesyncNativeStoreUpdateCacheSyncRegistered = true;
+
+try{electron_1.contextBridge.exposeInMainWorld('__F5_L190',190)}catch(e){}
+    electron_1.ipcRenderer.on(events_js_1.Events.NATIVE_STORE_UPDATE, (event, key, value) => {
+        store_js_1.updateCache?.(key, value);
+        if (typeof key === 'string' && key.startsWith('modSettings')) {
+            resetTitlebarVisibilitySettings();
+        }
+        nativeStoreUpdateListeners.forEach((callback) => callback(key, value));
+    });
+};
+registerApplicationInitFinishedEvent();
+const shouldHidePulseSyncVersionInTitleBar = () => {
+    try {
+        return getTitlebarVisibilitySettings().shouldHidePulseSyncVersion;
+    } catch (error) {
+        return false;
+    }
+};
+const cleanupNonPremiumTitlebarBranding = () => {
+    window.document.getElementById(PULSESYNC_TITLEBAR_STYLE_ID)?.remove();
+    for (const element of window.document.querySelectorAll('[data-pulsesync-titlebar-branding-owned="true"]')) {
+        element.remove();
+    }
+};
+const ensureNonPremiumTitlebarBranding = () => {
+    const titlebarVisibilitySettings = getTitlebarVisibilitySettings();
+    if (titlebarVisibilitySettings.shouldHidePulseSyncVersion || titlebarVisibilitySettings.isPremium) {
+        cleanupNonPremiumTitlebarBranding();
+        return;
+    }
+
+try{electron_1.contextBridge.exposeInMainWorld('__F6_L219',219)}catch(e){}
+    const titleBar = window.document.querySelector('[class*="TitleBar_root"]');
+    if (!titleBar) return;
+
+try{electron_1.contextBridge.exposeInMainWorld('__F7_L222',222)}catch(e){}
+    const brandingText = `PulseSync ${config_js_1.config.modification.version}`;
+    const head = window.document.head || window.document.documentElement;
+    if (head) {
+        let styleElement = window.document.getElementById(PULSESYNC_TITLEBAR_STYLE_ID);
+        const guardCss = `
+            ${PULSESYNC_TITLEBAR_TEXT_SELECTOR} {
+                display: inline !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                width: auto !important;
+                height: auto !important;
+                max-width: none !important;
+                min-width: 0 !important;
+                overflow: visible !important;
+                pointer-events: none !important;
+                position: relative !important;
+            }
+
+try{electron_1.contextBridge.exposeInMainWorld('__F8_L240',240)}catch(e){}
+            ${PULSESYNC_FOREIGN_TITLEBAR_SELECTOR} {
+                display: none !important;
+                visibility: hidden !important;
+                opacity: 0 !important;
+                width: 0 !important;
+                height: 0 !important;
+                overflow: hidden !important;
+            }
+        `;
+
+try{electron_1.contextBridge.exposeInMainWorld('__F9_L250',250)}catch(e){}
+        if (!styleElement) {
+            styleElement = window.document.createElement('style');
+            styleElement.id = PULSESYNC_TITLEBAR_STYLE_ID;
+            head.appendChild(styleElement);
+        }
+        if (styleElement.textContent !== guardCss) {
+            styleElement.textContent = guardCss;
+        }
+    }
+
+    let pulseText = titleBar.querySelector('span[class*="TitleBar_pulseText"], .TitleBar_pulseText__FhYv, [class*="TitleBar_pulseText"]');
+    if (!pulseText) {
+        pulseText = window.document.createElement('span');
+        pulseText.className = PULSESYNC_TITLEBAR_TEXT_CLASS;
+        pulseText.setAttribute('data-pulsesync-titlebar-branding-owned', 'true');
+        titleBar.insertBefore(pulseText, titleBar.firstChild || null);
+    }
+
+    if (pulseText.textContent !== brandingText) {
+        pulseText.textContent = brandingText;
+    }
+
+    if (pulseText.getAttribute('data-pulsesync-titlebar-branding') !== 'true') {
+        pulseText.setAttribute('data-pulsesync-titlebar-branding', 'true');
+    }
+
+try{electron_1.contextBridge.exposeInMainWorld('__F10_L276',276)}catch(e){}
+    const setImportantStyle = (element, property, value) => {
+        if (element.style.getPropertyValue(property) === value && element.style.getPropertyPriority(property) === 'important') {
+            return;
+        }
+        element.style.setProperty(property, value, 'important');
+    };
+
+try{electron_1.contextBridge.exposeInMainWorld('__F11_L283',283)}catch(e){}
+    setImportantStyle(pulseText, 'display', 'inline');
+    setImportantStyle(pulseText, 'visibility', 'visible');
+    setImportantStyle(pulseText, 'opacity', '1');
+    setImportantStyle(pulseText, 'width', 'auto');
+    setImportantStyle(pulseText, 'height', 'auto');
+    setImportantStyle(pulseText, 'overflow', 'visible');
+
+    for (const element of titleBar.querySelectorAll('[id*="custom-titlebar"], [class*="custom-titlebar"], [data-titlebar-replacement]')) {
+        if (element === pulseText) continue;
+        element.remove();
+    }
+};
+const installNonPremiumTitlebarBrandingGuard = () => {
+    const titlebarVisibilitySettings = getTitlebarVisibilitySettings();
+    if (titlebarVisibilitySettings.shouldHidePulseSyncVersion) return;
+    if (titlebarVisibilitySettings.isPremium) return;
+
+try{electron_1.contextBridge.exposeInMainWorld('__F12_L300',300)}catch(e){}
+    let scheduled = false;
+    let applyingBranding = false;
+    let titlebarObserver = null;
+    let titlebarObserverTarget = null;
+    const runGuard = () => {
+        scheduled = false;
+        if (applyingBranding) {
+            return;
+        }
+
+try{electron_1.contextBridge.exposeInMainWorld('__F13_L310',310)}catch(e){}
+        applyingBranding = true;
+        try {
+            ensureNonPremiumTitlebarBranding();
+            observeTitlebar();
+        } finally {
+            applyingBranding = false;
+        }
+    };
+    const scheduleGuard = () => {
+        if (scheduled) return;
+        scheduled = true;
+        if (window.requestAnimationFrame) {
+            window.requestAnimationFrame(runGuard);
+            return;
+        }
+        window.setTimeout(runGuard, 16);
+    };
+    const observeTitlebar = () => {
+        if (!window.MutationObserver) return;
+
+try{electron_1.contextBridge.exposeInMainWorld('__F14_L330',330)}catch(e){}
+        const titleBar = window.document.querySelector('[class*="TitleBar_root"]');
+        if (!titleBar || titlebarObserverTarget === titleBar) {
+            return;
+        }
+
+try{electron_1.contextBridge.exposeInMainWorld('__F15_L335',335)}catch(e){}
+        titlebarObserver?.disconnect();
+        titlebarObserverTarget = titleBar;
+        titlebarObserver = new MutationObserver(() => {
+            if (applyingBranding) {
+                return;
+            }
+            scheduleGuard();
+        });
+        titlebarObserver.observe(titleBar, {
+            childList: true,
+        });
+    };
+
+    ensureNonPremiumTitlebarBranding();
+    observeTitlebar();
+
+    nativeStoreUpdateListeners.add((key) => {
+        if (typeof key === 'string' && key.startsWith('modSettings')) {
+            scheduleGuard();
+        }
+    });
+
+    if (!window.MutationObserver) return;
+    const observer = new MutationObserver(() => {
+        if (applyingBranding) {
+            return;
+        }
+        if (!titlebarObserverTarget?.isConnected) {
+            scheduleGuard();
+        }
+    });
+    const observeTarget = window.document.body || window.document.documentElement;
+    if (observeTarget) {
+        observer.observe(observeTarget, {
+            subtree: true,
+            childList: true,
+        });
+    }
+};
+
+const loadedWorkers = new Map();
+
+const loadWorker = (workerName) => {
+    const workerPath = path.join(__dirname, 'workers', `${path.parse(workerName).name}.js`);
+    const code = fs.readFileSync(workerPath);
+    loadedWorkers.set(workerName, code.toString('utf-8'));
+};
+
+registerNativeStoreUpdateCacheSync();
+
+// 5.120: musicDesktop ДО всего остального — если ниже что-то упадёт, мост всё равно жив
+try {
+    const __os = require('os');
+    electron_1.contextBridge.exposeInMainWorld('musicDesktop', {
+        runtime: { version: '5.120.0', branch: 'stable', platform: process.platform, deviceInfo: { manufacturer: '', model: '', uuid: '', os: process.platform, os_version: __os.release(), device_id: '', clid: 0 }, deviceHostname: __os.hostname() },
+        window: { minimize: () => electron_1.ipcRenderer.send('desktop:window:minimize'), maximize: () => electron_1.ipcRenderer.send('desktop:window:maximize'), close: () => electron_1.ipcRenderer.send('desktop:window:close') },
+        app: { ready: (l) => electron_1.ipcRenderer.send('desktop:application:ready', l), setTheme: (t) => electron_1.ipcRenderer.send('desktop:application:theme', t), installUpdate: () => electron_1.ipcRenderer.send('desktop:application:install-update'), onUpdateAvailable: (cb) => electron_1.ipcRenderer.on('desktop:application:update-available', (_e, ...a) => cb(...a)), onRefreshData: (cb) => electron_1.ipcRenderer.on('desktop:application:refresh-data', (_e, ...a) => cb(...a)), onFirstLaunch: (cb) => electron_1.ipcRenderer.on('desktop:application:first-launch', (_e, ...a) => cb(...a)), onProbabilityBucket: (cb) => electron_1.ipcRenderer.on('desktop:application:probability-bucket', (_e, ...a) => cb(...a)), onLoadReleaseNotes: (cb) => electron_1.ipcRenderer.on('desktop:application:load-release-notes', (_e, ...a) => cb(...a)) },
+        authorization: { getPassportLogin: () => electron_1.ipcRenderer.invoke('desktop:authorization:get-passport-login'), getYandexUid: () => electron_1.ipcRenderer.invoke('desktop:authorization:get-yandex-uid'), reportDiagnostic: (p) => electron_1.ipcRenderer.send('desktop:authorization:diagnostic', p) },
+        player: { reportState: (st) => electron_1.ipcRenderer.send('desktop:player:state', st), onAction: (cb) => electron_1.ipcRenderer.on('desktop:player:action', (_e, ...a) => cb(...a)) },
+        navigation: { onOpenDeeplink: (cb) => electron_1.ipcRenderer.on('desktop:navigation:open-deeplink', (_e, ...a) => cb(...a)) },
+        offline: { notifyTracksAvailabilityUpdated: () => electron_1.ipcRenderer.send('desktop:offline:tracks-availability-updated'), notifyRepositoryMetaUpdated: () => electron_1.ipcRenderer.send('desktop:offline:repository-meta-updated'), onRefreshTracksAvailability: (cb) => electron_1.ipcRenderer.on('desktop:offline:refresh-tracks-availability', (_e, ...a) => cb(...a)), onRefreshRepositoryMeta: (cb) => electron_1.ipcRenderer.on('desktop:offline:refresh-repository-meta', (_e, ...a) => cb(...a)) },
+        files: { savePng: (dp, buf) => electron_1.ipcRenderer.send('desktop:files:save-png', { defaultPath: dp, buffer: buf }) },
+    });
+} catch (e) { console.error('musicDesktop exposure failed:', e.message); }
+electron_1.contextBridge.exposeInMainWorld('IS_PREMIUM_USER', () => electron_1.ipcRenderer.invoke('isPremiumUser'));
+electron_1.contextBridge.exposeInMainWorld('HIDE_PULSESYNC_VERSION_IN_TITLEBAR', () => shouldHidePulseSyncVersionInTitleBar());
+electron_1.contextBridge.exposeInMainWorld('IS_MACOS', process.platform === 'darwin');
+electron_1.contextBridge.exposeInMainWorld('IS_DEVTOOLS_ENABLED', Boolean(store_js_1.getDevMode()));
+electron_1.contextBridge.exposeInMainWorld('EVENTS', events_js_1);
+
+electron_1.contextBridge.exposeInMainWorld('DISPLAY_MAX_FPS', store_js_1.getDisplayMaxFps());
+electron_1.contextBridge.exposeInMainWorld('ENABLE_YNISON_REMOTE_CONTROL', Boolean(store_js_1.getEnableYnisonRemoteControl()));
+electron_1.contextBridge.exposeInMainWorld('YNISON_INTERCEPT_PLAYBACK', Boolean(store_js_1.getYnisonInterceptPlayback()));
+electron_1.contextBridge.exposeInMainWorld('GLOBAL_SHORTCUTS', Boolean(store_js_1.getGlobalShortcuts()));
+electron_1.contextBridge.exposeInMainWorld('VERSION', String(config_js_1.config.buildInfo.VERSION));
+electron_1.contextBridge.exposeInMainWorld('PULSE_VERSION', String(config_js_1.config.modification.version));
+electron_1.contextBridge.exposeInMainWorld('ENABLED_ADDONS', async () => electron_1.ipcRenderer.invoke('get-enabled-addons'));
+electron_1.contextBridge.exposeInMainWorld('HOST_VERSION', String(config_js_1.config.modification.realYMVersion));
+electron_1.contextBridge.exposeInMainWorld('SHOW_CODEC_INSTEAD_OF_QUALITY_MARK', () =>
+    Boolean(store_js_1.getModSettings()?.playerBarEnhancement.showCodecInsteadOfQualityMark),
+);
+electron_1.contextBridge.exposeInMainWorld('BRANCH', String(config_js_1.config.buildInfo.BRANCH));
+electron_1.contextBridge.exposeInMainWorld('PLATFORM', deviceInfo.os);
+electron_1.contextBridge.exposeInMainWorld('DEVICE_INFO', deviceInfo);
+electron_1.contextBridge.exposeInMainWorld('DEVICE_HOSTNAME', (0, deviceInfo_js_1.getDeviceHostname)());
+electron_1.contextBridge.exposeInMainWorld('PLAYER_ACTIONS', playerActions_js_1.PlayerActions);
+electron_1.contextBridge.exposeInMainWorld('VIBE_ANIMATION_INTENSITY_COEFFICIENT', () => store_js_1.getModSettings()?.vibeAnimationEnhancement?.vibeIntensityCoefficient);
+electron_1.contextBridge.exposeInMainWorld('VIBE_ANIMATION_MAX_FPS', () => store_js_1.getModSettings()?.vibeAnimationEnhancement?.maxFPS);
+electron_1.contextBridge.exposeInMainWorld('VIBE_ANIMATION_USE_DYNAMIC_ENERGY', () => store_js_1.getModSettings()?.vibeAnimationEnhancement?.useDynamicEnergy);
+electron_1.contextBridge.exposeInMainWorld('VIBE_ANIMATION_SMOOTH_DYNAMIC_ENERGY', () => store_js_1.getModSettings()?.vibeAnimationEnhancement?.smoothDynamicEnergy);
+electron_1.contextBridge.exposeInMainWorld(
+    'VIBE_ANIMATION_SMOOTH_DYNAMIC_ENERGY_COEFFICIENT',
+    () => store_js_1.getModSettings()?.vibeAnimationEnhancement?.smoothDynamicEnergyCoefficient,
+);
+electron_1.contextBridge.exposeInMainWorld('VIBE_ANIMATION_USE_VIBE_WIDGET_COLORS', () => store_js_1.getModSettings()?.vibeAnimationEnhancement?.useVibeWidgetColors);
+electron_1.contextBridge.exposeInMainWorld('VIBE_ANIMATION_DISABLE_RENDERING', () => store_js_1.getModSettings()?.vibeAnimationEnhancement?.disableRendering);
+electron_1.contextBridge.exposeInMainWorld('ALWAYS_SHOW_PLAYER_TIMESTAMPS', () => store_js_1.getModSettings()?.playerBarEnhancement?.alwaysShowTimestamps);
+electron_1.contextBridge.exposeInMainWorld('CHANGE_DISLIKE_BUTTON_POS', () => store_js_1.get('modSettings.playerBarEnhancement.changeDislikeButtonPos') ?? true);
+electron_1.contextBridge.exposeInMainWorld('DISABLE_PER_TRACK_COLORS', () => store_js_1.getModSettings()?.playerBarEnhancement?.disablePerTrackColors);
+electron_1.contextBridge.exposeInMainWorld('ALWAYS_WIDE_BAR', () => store_js_1.getModSettings()?.playerBarEnhancement?.alwaysWideBar);
+electron_1.contextBridge.exposeInMainWorld('SHOW_OLD_PLAYER_BAR_ON_NEW_WAVE', () => store_js_1.getModSettings()?.playerBarEnhancement?.showOldPlayerBarOnNewWave);
+electron_1.contextBridge.exposeInMainWorld('ENABLE_YANDEX_STATION_CAST', () => store_js_1.getModSettings()?.playerBarEnhancement?.enableYandexStationCast ?? true);
+electron_1.contextBridge.exposeInMainWorld('IMPROVED_WAVE_LAYOUT', () => store_js_1.getModSettings()?.vibeAnimationEnhancement?.improvedWaveLayout ?? true);
+electron_1.contextBridge.exposeInMainWorld('DEFAULT_MUSIC_EXPERIMENT_OVERRIDES', () => store_js_1.getDefaultExperimentOverrides());
+electron_1.contextBridge.exposeInMainWorld('ENABLE_ENDLESS_MUSIC', () => store_js_1.getModSettings()?.vibeAnimationEnhancement?.enableEndlessMusic);
+electron_1.contextBridge.exposeInMainWorld('ALLOWED_URLS', {
+    get: () => electron_1.ipcRenderer.invoke('GET_CORS'),
+});
+electron_1.contextBridge.exposeInMainWorld('desktopEvents', {
+    send(name, ...args) {
+        electron_1.ipcRenderer.send(name, ...args);
+    },
+    on(name, callback) {
+        const listener = (event, ...args) => {
+            callback(event, ...args);
+        };
+
+        electron_1.ipcRenderer.on(name, listener);
+
+        return () => {
+            electron_1.ipcRenderer.off(name, listener);
+        };
+    },
+    off(name, listener) {
+        electron_1.ipcRenderer.off(name, listener);
+    },
+    invoke(name, ...args) {
+        return electron_1.ipcRenderer.invoke(name, ...args);
+    },
+    emit(name, ...args) {
+        return electron_1.ipcRenderer.emit(name, ...args);
+    },
+    EVENTS: { ...events_js_1.Events },
+});
+electron_1.contextBridge.exposeInMainWorld('nativeSettings', {
+    set(key, value) {
+        return electron_1.ipcRenderer.invoke(events_js_1.Events.NATIVE_STORE_SET, key, value);
+    },
+    get(key) {
+        return store_js_1.get(key);
+    },
+    getAsync(key) {
+        return electron_1.ipcRenderer.invoke(events_js_1.Events.NATIVE_STORE_GET, key);
+    },
+    setPathWithNativeDialog(key, defaultPath = undefined, properties = undefined) {
+        electron_1.ipcRenderer.invoke('setPathWithNativeDialog', key, defaultPath, properties);
+    },
+});
+
+electron_1.contextBridge.exposeInMainWorld('nativeAudioOutput', {
+    isYaspChunkTapEnabled() {
+        return Boolean(store_js_1.get('modSettings.nativeAudioOutput.enableYaspChunkTap'));
+    },
+    setYaspChunkTapEnabled(enabled) {
+        return electron_1.ipcRenderer.invoke(events_js_1.Events.NATIVE_STORE_SET, 'modSettings.nativeAudioOutput.enableYaspChunkTap', Boolean(enabled));
+    },
+    isWasapiExclusiveOutputEnabled() {
+        return Boolean(
+            store_js_1.get('modSettings.nativeAudioOutput.enableWasapiExclusiveOutput') && store_js_1.get('modSettings.nativeAudioOutput.enableYaspChunkTap'),
+        );
+    },
+    setWasapiExclusiveOutputEnabled(enabled) {
+        return electron_1.ipcRenderer.invoke(events_js_1.Events.NATIVE_STORE_SET, 'modSettings.nativeAudioOutput.enableWasapiExclusiveOutput', Boolean(enabled));
+    },
+    getWasapiExclusiveStatus() {
+        return electron_1.ipcRenderer.invoke(events_js_1.Events.NATIVE_AUDIO_OUTPUT_GET_WASAPI_EXCLUSIVE_STATUS);
+    },
+    getYaspAudioFormat() {
+        return electron_1.ipcRenderer.invoke(events_js_1.Events.NATIVE_AUDIO_OUTPUT_GET_YASP_AUDIO_FORMAT);
+    },
+    listWasapiExclusiveDevices(options = {}) {
+        return electron_1.ipcRenderer.invoke(events_js_1.Events.NATIVE_AUDIO_OUTPUT_LIST_WASAPI_EXCLUSIVE_DEVICES, {
+            includeDisabled: Boolean(options?.includeDisabled),
+            includeFormats: options?.includeFormats !== false,
+        });
+    },
+    getSelectedWasapiExclusiveDeviceId() {
+        return electron_1.ipcRenderer.invoke(events_js_1.Events.NATIVE_AUDIO_OUTPUT_GET_WASAPI_EXCLUSIVE_DEVICE);
+    },
+    selectWasapiExclusiveDevice(deviceId) {
+        return electron_1.ipcRenderer.invoke(events_js_1.Events.NATIVE_AUDIO_OUTPUT_SELECT_WASAPI_EXCLUSIVE_DEVICE, deviceId ?? null);
+    },
+    reportWasapiExclusiveAudioParking(payload = {}) {
+        electron_1.ipcRenderer.send(events_js_1.Events.NATIVE_AUDIO_OUTPUT_WASAPI_AUDIO_PARKING_STATE, payload);
+    },
+    reportWasapiExclusivePlayerSeek(payload = {}) {
+        electron_1.ipcRenderer.send(events_js_1.Events.NATIVE_AUDIO_OUTPUT_WASAPI_PLAYER_SEEK, payload);
+    },
+    configureYaspSource(payload) {
+        electron_1.ipcRenderer.send(events_js_1.Events.NATIVE_AUDIO_OUTPUT_CONFIGURE_YASP_SOURCE, payload);
+    },
+    pushYaspChunk(payload, chunk) {
+        if (!(chunk instanceof ArrayBuffer)) {
+            return;
+        }
+        electron_1.ipcRenderer.send(events_js_1.Events.NATIVE_AUDIO_OUTPUT_YASP_CHUNK, payload, Buffer.from(chunk));
+    },
+    resetYaspSource(payload) {
+        electron_1.ipcRenderer.send(events_js_1.Events.NATIVE_AUDIO_OUTPUT_RESET_YASP_SOURCE, payload);
+    },
+});
+electron_1.contextBridge.exposeInMainWorld('globalShortcutsControl', {
+    setRecordingState(isRecording) {
+        electron_1.ipcRenderer.send(events_js_1.Events.GLOBAL_SHORTCUTS_RECORDING_STATE, Boolean(isRecording));
+    },
+});
+electron_1.contextBridge.exposeInMainWorld('scrobble', {
+    login: () => electron_1.ipcRenderer.invoke('scrobble-login'),
+    logout: () => electron_1.ipcRenderer.invoke('scrobble-logout'),
+    lastfmLogin: () => electron_1.ipcRenderer.invoke('scrobble-lastfm-login'),
+    lastfmLogout: () => electron_1.ipcRenderer.invoke('scrobble-lastfm-logout'),
+    lastfmGetUser: () => electron_1.ipcRenderer.invoke('scrobble-lastfm-get-user'),
+    lastfmGetResnet: (user) => electron_1.ipcRenderer.invoke('scrobble-lastfm-get-current-playing-track', user),
+});
+
+try{electron_1.contextBridge.exposeInMainWorld('__F16_L550',550)}catch(e){}
+electron_1.contextBridge.exposeInMainWorld('zoomControl', {
+    zoomIn: () => electron_1.ipcRenderer.invoke('zoom-in'),
+    zoomOut: () => electron_1.ipcRenderer.invoke('zoom-out'),
+    resetZoom: () => electron_1.ipcRenderer.invoke('reset-zoom'),
+    getZoomLevel: () => electron_1.ipcRenderer.invoke('get-zoom-level'),
+    setZoomLevel: (level) => electron_1.ipcRenderer.invoke('set-zoom-level', level),
+});
+
+electron_1.contextBridge.exposeInMainWorld('autoStartupStatus', (data) => electron_1.ipcRenderer.send('autoStartupStatus', data));
+electron_1.contextBridge.exposeInMainWorld('openConfigFile', () => electron_1.ipcRenderer.invoke('openConfigFile'));
+electron_1.contextBridge.exposeInMainWorld('playlistLinkImporter', {
+    prefetchTrack: (url) => electron_1.ipcRenderer.invoke('playlist-prefetch-track-from-link', { url }),
+    importTrack: (url, importID) => electron_1.ipcRenderer.invoke('playlist-import-track-from-link', { url, importID }),
+    reportUploadState: (payload) => electron_1.ipcRenderer.send('PLAYLIST_LINK_IMPORT_UPLOAD_STATE', payload),
+    onTrackImported: (callback) => {
+        const listener = (event, payload) => {
+            callback(payload);
+        };
+
+        electron_1.ipcRenderer.on('PLAYLIST_LINK_IMPORT_TRACK_READY', listener);
+
+        return () => {
+            electron_1.ipcRenderer.off('PLAYLIST_LINK_IMPORT_TRACK_READY', listener);
+        };
+    },
+});
+window.document.addEventListener('DOMContentLoaded', () => {
+    const theme = (0, getInitialTheme_js_1.getInitialTheme)();
+    if (hostnamePatterns_js_1.applicationHostnamePattern.test(window.location.hostname)) {
+        window.document.documentElement.style.backgroundColor = theme === theme_js_1.Theme.Light ? '#FFFFFF' : '#000000';
+        installNonPremiumTitlebarBrandingGuard();
+    }
+});
+electron_1.contextBridge.exposeInMainWorld('getWorker', (workerName) => {
+    if (!loadedWorkers.get(workerName)) loadWorker(workerName);
+    return loadedWorkers.get(workerName);
+});

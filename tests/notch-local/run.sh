@@ -2,7 +2,7 @@
 # Запуск всех проверок нотча с верификацией версии приложения.
 # Эталон меняется — правь ETALON ниже и патчи чанков.
 set -e
-ETALON="${NOTCH_ETALON:-5.119.0}"
+ETALON="${NOTCH_ETALON:-5.120.0}"
 HOST="${NOTCH_SSH:-}"
 APP_PATH="${NOTCH_APP:-/Applications/Яндекс Музыка.app}"
 

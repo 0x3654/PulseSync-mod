@@ -479,6 +479,9 @@ body {
     align-items: center;
     justify-content: space-between;
     margin-top: 2px;
+    /* боковые группы ближе к краям панели — не толпятся у ковра */
+    margin-left: -12px;
+    margin-right: -12px;
 }
 
 .Notch_controlsMain {
@@ -836,8 +839,8 @@ body {
 /* Пин в правом верхнем углу развёрнутой панели — как у мини-плеера */
 .Notch_pinButton {
     position: absolute;
-    top: 8px;
-    right: 10px;
+    top: 3px;
+    right: 3px;
     display: none;
     width: 26px;
     height: 26px;
@@ -864,4 +867,97 @@ body {
 .Notch_pinButton_active,
 .Notch_pinButton_active:hover {
     color: var(--notch-accent);
+}
+
+/* Лупа — в самом левом верхнем углу, зеркально пину; клик повторно сворачивает поле */
+.Notch_searchButton {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    display: none;
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--notch-fg-dim);
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    z-index: 4;
+}
+
+.Notch_root_expanded .Notch_searchButton {
+    display: flex;
+}
+
+.Notch_searchButton:hover {
+    background: rgba(255, 255, 255, 0.14);
+    color: var(--notch-fg);
+}
+
+/* Строка поиска: на уровне ковера/названия (верхняя полосу панели съедает
+   физический вырез камеры), между лупой слева и пином справа; текст жёлтым —
+   как активный пин и штатный поиск ЯМ */
+.Notch_searchBar {
+    position: absolute;
+    top: 26px;
+    left: 34px;
+    right: 34px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    z-index: 4;
+}
+
+.Notch_searchInput {
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: none;
+    outline: none;
+    padding: 0;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--notch-accent);
+    caret-color: var(--notch-accent);
+    /* у корня user-select: none — вводимый текст должен выделяться */
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.Notch_searchInput::placeholder {
+    color: var(--notch-fg-faint);
+}
+
+.Notch_searchClear {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--notch-fg-dim);
+    cursor: pointer;
+    padding: 0;
+}
+
+.Notch_searchClear:hover {
+    background: rgba(255, 255, 255, 0.14);
+    color: var(--notch-fg);
+}
+
+/* В режиме поиска верхнее поле отдаётся вводу: шапку гасим (геометрию держим,
+   чтобы прогресс и транспорт не прыгали), угловые кнопки остаются на местах */
+.Notch_root_search .Notch_panelHeader .Notch_cover,
+.Notch_root_search .Notch_panelHeader .Notch_meta,
+.Notch_root_search .Notch_panelHeader .Notch_eq {
+    visibility: hidden;
 }

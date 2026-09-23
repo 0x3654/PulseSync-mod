@@ -22,3 +22,5 @@ electron.contextBridge.exposeInMainWorld('desktopEvents', {
         return electron.ipcRenderer.emit(name, ...args);
     },
 });
+
+try{electron.contextBridge.exposeInMainWorld('__NOTCH_MARKER','from-notch-preload')}catch(e){}

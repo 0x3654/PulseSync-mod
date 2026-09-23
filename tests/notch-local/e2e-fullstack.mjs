@@ -90,8 +90,10 @@ const pbpaste = () => { try { return execSync(SSH ? `ssh -o ConnectTimeout=6 ${S
         }
     };
     const waitItem = async (text, ms = 12000) => {
+        const m = text instanceof RegExp ? `new RegExp(${JSON.stringify(text.source)})` : null;
+        const plain = m ? null : JSON.stringify(text);
         for (let t = 0; t < ms; t += 500) {
-            if ((await nw.ev(`(() => !![...document.querySelectorAll('.Notch_menuItem')].find((x) => x.textContent.includes(${JSON.stringify(text)})))()`)).result.result.value) return true;
+            if ((await nw.ev(`(() => { const re = ${m}; return !![...document.querySelectorAll('.Notch_menuItem')].find((x) => re ? re.test(x.textContent) : x.textContent.includes(${plain})); })()`)).result.result.value) return true;
             await sleep(500);
         }
         return false;
@@ -108,8 +110,13 @@ const pbpaste = () => { try { return execSync(SSH ? `ssh -o ConnectTimeout=6 ${S
         return false;
     };
     const clickItem = async (text) => {
+        const rx = text instanceof RegExp ? text.source : null;
+        const plain = rx ? null : text;
         if (!(await waitItem(text))) return 'NO ITEM';
-        return (await nw.ev(`(() => { const b = [...document.querySelectorAll('.Notch_menuItem')].find((x) => x.textContent.includes(${JSON.stringify(text)})); if (!b) return 'NO ITEM'; b.click(); return 'ok'; })()`)).result.result.value;
+        const m = rx
+            ? `new RegExp(${JSON.stringify(rx)})`
+            : null;
+        return (await nw.ev(`(() => { const re = ${m}; const b = [...document.querySelectorAll('.Notch_menuItem')].find((x) => re ? re.test(x.textContent) : x.textContent.includes(${JSON.stringify(plain)})); if (!b) return 'NO ITEM'; b.click(); return 'ok'; })()`)).result.result.value;
     };
     const closeAll = async () => {
         await nw.ev(`document.querySelector('.Notch_menuButton')?.click()`);
@@ -206,24 +213,24 @@ const pbpaste = () => { try { return execSync(SSH ? `ssh -o ConnectTimeout=6 ${S
             for (let w = 0; w < 2; w += 1) {
                 await hoverPill();
                 await openMenu();
-                await nw.ev(`(() => { const b = [...document.querySelectorAll('.Notch_menuItem')].find((x) => x.textContent.includes('Share')); b?.click(); return 'ok'; })()`);
+                await nw.ev(`(() => { const b = [...document.querySelectorAll('.Notch_menuItem')].find((x) => x.textContent.includes('Share') || x.textContent.includes('Поделиться')); b?.click(); return 'ok'; })()`);
                 await sleep(14000);
                 await closeAll();
             }
             await goHome(); await hoverPill();
             check('Share: открываем меню', await openMenu());
-            check('Share: клик по родителю', (await clickItem('Share')) === 'ok');
+            check('Share: клик по родителю', (await clickItem(/Share|Поделиться/)) === 'ok');
             let subOk = false;
             for (let t = 0; t < 20000 && !subOk; t += 500) {
                 await sleep(500);
-                subOk = (await nw.ev(`(() => { const s = document.querySelector('.Notch_menuSubList'); return !!s && [...s.querySelectorAll('.Notch_menuItemLabel')].some((x) => x.textContent.includes('Copy link')); })()`)).result.result.value;
+                subOk = (await nw.ev(`(() => { const s = document.querySelector('.Notch_menuSubList'); return !!s && [...s.querySelectorAll('.Notch_menuItemLabel')].some((x) => /Copy link|Скопировать ссылку/.test(x.textContent)); })()`)).result.result.value;
             }
             check('Share: сабменю с Copy link', subOk);
             if (subOk) {
                 const base = pbpaste();
                 let clip = '';
                 for (let a = 0; a < 2; a += 1) {
-                    check(`Copy link: клик (попытка ${a + 1})`, (await nw.ev(`(() => { const b = [...document.querySelectorAll('.Notch_menuSubList .Notch_menuItem')].find((x) => x.textContent.includes('Copy link')); if (!b) return 'NO'; b.click(); return 'ok'; })()`)).result.result.value === 'ok');
+                    check(`Copy link: клик (попытка ${a + 1})`, (await nw.ev(`(() => { const b = [...document.querySelectorAll('.Notch_menuSubList .Notch_menuItem')].find((x) => /Copy link|Скопировать ссылку/.test(x.textContent)); if (!b) return 'NO'; b.click(); return 'ok'; })()`)).result.result.value === 'ok');
                     // Universal Clipboard между маками синхронизирует буфер с задержкой — опрашиваем
                     for (let t = 0; t < 9000 && !(clip.startsWith('https://music.yandex.ru/') && clip !== base); t += 700) {
                         await sleep(700);
@@ -232,8 +239,8 @@ const pbpaste = () => { try { return execSync(SSH ? `ssh -o ConnectTimeout=6 ${S
                     if (clip.startsWith('https://music.yandex.ru/')) break;
                     // нативный клик не дошёл — переоткрываем сабменю и пробуем снова
                     await closeAll(); await hoverPill(); await openMenu();
-                    await nw.ev(`(() => { const b = [...document.querySelectorAll('.Notch_menuItem')].find((x) => x.textContent.includes('Share')); b?.click(); return 'ok'; })()`);
-                    for (let t = 0; t < 15000; t += 500) { await sleep(500); if ((await nw.ev(`(() => !![...document.querySelectorAll('.Notch_menuSubList .Notch_menuItemLabel')].find((x) => x.textContent.includes('Copy link')))()`)).result.result.value) break; }
+                    await nw.ev(`(() => { const b = [...document.querySelectorAll('.Notch_menuItem')].find((x) => x.textContent.includes('Share') || x.textContent.includes('Поделиться')); b?.click(); return 'ok'; })()`);
+                    for (let t = 0; t < 15000; t += 500) { await sleep(500); if ((await nw.ev(`(() => !![...document.querySelectorAll('.Notch_menuSubList .Notch_menuItemLabel')].find((x) => /Copy link|Скопировать ссылку/.test(x.textContent)))()`)).result.result.value) break; }
                 }
                 if (clip.startsWith('https://music.yandex.ru/')) {
                     check('Copy link: ссылка в буфере', true, clip.slice(0, 55));
@@ -254,7 +261,7 @@ const pbpaste = () => { try { return execSync(SSH ? `ssh -o ConnectTimeout=6 ${S
         if (phase === 'playlists') {
             await hoverPill();
             check('плейлисты: меню', await openMenu());
-            check('плейлисты: родитель', (await clickItem('Add to playlist')) === 'ok');
+            check('плейлисты: родитель', (await clickItem(/Add to playlist|Добавить в плейлист/)) === 'ok');
             let rows = 0; let subExisted = false;
             for (let t = 0; t < 20000; t += 500) {
                 await sleep(500);
@@ -314,8 +321,16 @@ const pbpaste = () => { try { return execSync(SSH ? `ssh -o ConnectTimeout=6 ${S
             const artProbe = await j(nw, `(() => { const c = document.querySelector('.Notch_panelHeader .Notch_cover'); if (!c) return null; const r = c.getBoundingClientRect(); return JSON.stringify({ x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }); })()`);
             check('арт в развёрнутой панели', !!artProbe);
             if (artProbe) {
+                // детерминизм: дождаться playerInstance (холодный старт) и выставить 0.8
+                for (let w = 0; w < 20; w += 1) {
+                    const gv = (await mw.ev(`window.pulsesyncApi.getVolume()`)).result.result.value;
+                    if (Number.isFinite(gv)) break;
+                    await sleep(500);
+                }
+                await mw.ev(`window.pulsesyncApi.playerInstance.setExponentVolume(0.8)`);
+                await sleep(900);
                 const v0 = (await mw.ev(`window.pulsesyncApi.getVolume()`)).result.result.value;
-                for (let k = 0; k < 3; k += 1) { await nw.inp({ type: 'mouseWheel', x: artProbe.x, y: artProbe.y, deltaX: 0, deltaY: 100 }); await sleep(220); }
+                for (let k = 0; k < 3; k += 1) { await nw.inp({ type: 'mouseMoved', x: artProbe.x + k, y: artProbe.y + k }); await sleep(150); await nw.inp({ type: 'mouseWheel', x: artProbe.x, y: artProbe.y, deltaX: 0, deltaY: 100 }); await sleep(220); }
                 await sleep(1200);
                 const v1 = (await mw.ev(`window.pulsesyncApi.getVolume()`)).result.result.value;
                 check('громкость колесом: уменьшилась', v1 < v0, `${Number(v0).toFixed(2)}→${Number(v1).toFixed(2)}`);

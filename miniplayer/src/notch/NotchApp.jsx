@@ -175,6 +175,13 @@ function NotchApp() {
     const [expanded, setExpanded] = useState(false)
     const [menuOpen, setMenuOpen] = useState(false)
     const [pinned, setPinned] = useState(false)
+    const [searchOpen, setSearchOpen] = useState(false)
+    const [query, setQuery] = useState('')
+    const searchInputRef = useRef(null)
+    // openSearch шлёт IPC сразу, до коммита React-стейта; main в ответ делает окно
+    // focusable+focus — Chromium синтезирует mouseleave и старое замыкание
+    // (searchOpen ещё false) успевает запланировать сворачивание. Проверяем ref.
+    const searchOpenRef = useRef(false)
     const [volumeHud, setVolumeHud] = useState(null)
     const volumeRef = useRef(null)
     const volumeHudTimerRef = useRef(null)
@@ -197,8 +204,8 @@ function NotchApp() {
     const onMouseLeave = useCallback(() => {
         // курсор ушёл: сворачиваемся, закрываем меню и снова прозрачны для кликов
         clearTimeout(hoverTimerRef.current)
-        // закреплено — панель и меню держим, окно продолжает принимать клики
-        if (pinned) return
+        // закреплено/ищем — панель и меню держим, окно продолжает принимать клики
+        if (pinned || searchOpenRef.current) return
         leaveTimerRef.current = setTimeout(() => setExpanded(false), 350)
         const wasMenuOpen = menuOpenRef.current
         setMenuOpen(false)
@@ -227,6 +234,65 @@ function NotchApp() {
     const onPillMouseLeave = useCallback(() => {
         clearTimeout(hoverTimerRef.current)
     }, [])
+
+    // Окно нотча нефокусируемо: на время ввода main делает его key-окном,
+    // иначе клавиатура до поля не доходит. Закрытие всегда возвращает как было.
+    const openSearch = useCallback(() => {
+        // фокус-смена синтезирует mouseleave: могли успеть запланировать
+        // сворачивание ДО клика — гасим таймер, поиск панель держит
+        clearTimeout(leaveTimerRef.current)
+        searchOpenRef.current = true
+        setSearchOpen(true)
+        window.desktopEvents?.send('NOTCHPLAYER_SEARCH_MODE', true)
+    }, [])
+    const closeSearch = useCallback(() => {
+        searchOpenRef.current = false
+        setSearchOpen(false)
+        setQuery('')
+        window.desktopEvents?.send('NOTCHPLAYER_SEARCH_MODE', false)
+    }, [])
+
+    // Фокус в поле: окно получает key-статус асинхронно после IPC — ловим
+    // его focus-событие и дожимаем фокус ещё раз по таймеру
+    useEffect(() => {
+        if (!searchOpen) return undefined
+        const focusInput = () => searchInputRef.current?.focus()
+        focusInput()
+        window.addEventListener('focus', focusInput)
+        const retry = setTimeout(focusInput, 150)
+        return () => {
+            window.removeEventListener('focus', focusInput)
+            clearTimeout(retry)
+        }
+    }, [searchOpen])
+
+    // Клик мимо окна снимает key-статус — считаем это отменой поиска.
+    // Mouseleave к этому моменту уже не придёт (курсор давно за окном и уход
+    // был проглочен гардом поиска), поэтому сворачиваем панель и возвращаем
+    // клик-сквозь сами — иначе панель висит открытой и держит события
+    useEffect(() => {
+        if (!searchOpen) return undefined
+        const onBlur = () => {
+            closeSearch()
+            setExpanded(false)
+            window.desktopEvents?.send('NOTCHPLAYER_SET_MOUSE_EVENTS', false)
+        }
+        window.addEventListener('blur', onBlur)
+        return () => window.removeEventListener('blur', onBlur)
+    }, [searchOpen, closeSearch])
+
+    const onSearchKeyDown = e => {
+        if (e.key === 'Enter') {
+            const q = query.trim()
+            if (!q) return
+            // как переходы по ссылкам шапки: уходим в основное окно — сворачиваемся
+            setExpanded(false)
+            closeSearch()
+            sendAction('NOTCH_SEARCH_QUERY', q)
+        } else if (e.key === 'Escape') {
+            closeSearch()
+        }
+    }
 
     useEffect(
         () => () => {
@@ -344,7 +410,13 @@ function NotchApp() {
 
     // при открытом меню корень расширяется до окна: реальные клики по пунктам
     // должны попадать в окно, а mouseleave корня закрывает меню
-    const rootClass = ['Notch_root', `Notch_root_${MODE}`, expanded ? 'Notch_root_expanded' : '', menuOpen ? 'Notch_root_menu' : '']
+    const rootClass = [
+        'Notch_root',
+        `Notch_root_${MODE}`,
+        expanded ? 'Notch_root_expanded' : '',
+        menuOpen ? 'Notch_root_menu' : '',
+        searchOpen ? 'Notch_root_search' : '',
+    ]
         .filter(Boolean)
         .join(' ')
 
@@ -375,6 +447,17 @@ function NotchApp() {
                     onClick={() => setPinned(p => !p)}
                 >
                     <Icon name={pinned ? 'pin_filled_xs' : 'pin_xs'} size={13} />
+                </button>
+
+                {/* Лупа: разворачивает поле поиска в верхней полосе; повторный клик — свернуть */}
+                <button
+                    type="button"
+                    aria-label={searchOpen ? 'Свернуть поиск' : 'Поиск'}
+                    title={searchOpen ? 'Свернуть поиск' : 'Поиск'}
+                    className="Notch_searchButton"
+                    onClick={() => (searchOpen ? closeSearch() : openSearch())}
+                >
+                    <Icon name="search_xs" size={13} />
                 </button>
 
                 {/* Вспышка лайка/дизлайка поверх капсулы */}
@@ -409,6 +492,36 @@ function NotchApp() {
 
                 {/* Развёрнутая панель */}
                 <div className="Notch_panel">
+                    {/* Поиск: строка на уровне ковера/названия, между угловыми кнопками.
+                        Физический вырез камеры съедает верхнюю полосу — держим ниже */}
+                    {searchOpen && (
+                        <div className="Notch_searchBar">
+                            <input
+                                ref={searchInputRef}
+                                className="Notch_searchInput"
+                                type="text"
+                                value={query}
+                                placeholder="Поиск"
+                                spellCheck={false}
+                                autoComplete="off"
+                                onChange={e => setQuery(e.target.value)}
+                                onKeyDown={onSearchKeyDown}
+                            />
+                            {query && (
+                                <button
+                                    type="button"
+                                    aria-label="Очистить"
+                                    className="Notch_searchClear"
+                                    onClick={() => {
+                                        setQuery('')
+                                        searchInputRef.current?.focus()
+                                    }}
+                                >
+                                    <Icon name="close_xs" size={12} />
+                                </button>
+                            )}
+                        </div>
+                    )}
                     <div className="Notch_panelHeader">
                         <div className="Notch_cover" onWheel={onCoverWheel}>
                             {cover ? <img src={cover.src} srcSet={cover.srcSet} alt="" draggable={false} /> : <Icon name="album_xxs" size={28} />}

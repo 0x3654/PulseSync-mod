@@ -2,7 +2,7 @@
 // Запуск: node tests/notch/structural.test.mjs
 // В PR не входит — локальная страховка регрессий класса «вставка в минифицированные чанки».
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -38,7 +38,7 @@ check('кнопка «⋯» пинится по data-test-id', pulsesync.include
 // 3) скоуп-проверка вставок в чанк настроек: все notch-идентификаторы должны
 // жить внутри ОДНОГО компонента (mobx PA), иначе terser после минификации
 // роняет модалку свободными именами (ReferenceError)
-const chunkPath = path.join(root, 'src/app/_next/static/chunks/app/(product)/(app)/settings/page-6117f4b40a8d56cd.js');
+const chunkPath = path.join(root, 'src/app/_next/static/chunks/app/(product)/(app)/settings/page-41b7a01cc78ba6f8.js');
 const chunk = readFileSync(chunkPath, 'utf8');
 const ids = ['notchPlayerEnabled', 'onNotchPlayerToggle', 'notchDisplay', 'onNotchDisplayChange', 'showShuffleRepeat', 'onShowShuffleRepeatToggle'];
 const componentStarts = [...chunk.matchAll(/\.PA\)\(/g)].map((m) => m.index);
@@ -66,9 +66,25 @@ if (minify) {
 }
 
 // 5) чанк тайтл-бара: кнопка нотча за IS_MACOS + настройкой
-const layout = readFileSync(path.join(root, 'src/app/_next/static/chunks/app/(product)/layout-1bdc588f6d2b4154.js'), 'utf8');
+const layout = readFileSync(path.join(root, 'src/app/_next/static/chunks/app/(product)/layout-35cf43494fe1d4ff.js'), 'utf8');
 check('кнопка нотча гейтится IS_MACOS', layout.includes('window.IS_MACOS'));
 check('видимость кнопки от modSettings.notchplayer.enabled', layout.includes("modSettings.notchplayer.enabled'"));
+
+// 5b) 5.120-специфика
+check('root_macos в css-карте тайтлбара', layout.includes("root_macos: 'TitleBar_root_macos__QjdOZ'"));
+check('ряд разгейчен для macOS', layout.includes('(s || isMacOS)'));
+check('кнопка нотча в ряду (ariaLabel)', layout.includes("ariaLabel: 'notchplayer'"));
+check('полный player state в layout', layout.includes('previousTrack') && layout.includes('actionsStore'));
+const preload = readFileSync(path.join(root, 'src/main/lib/preload.js'), 'utf8');
+check('musicDesktop-мост в мод-преплоаде', preload.includes("exposeInMainWorld('musicDesktop'"));
+check('createWindow грузит мод-преплоад', readFileSync(path.join(root, 'src/main/lib/window/createWindow.js'), 'utf8').includes("join(__dirname, '..', 'preload.js')"));
+check('pulsesync.js renderer-API на месте', existsSync(path.join(root, 'src/app/pulsesync.js')));
+check('rumScript подключает pulsesync.js', readFileSync(path.join(root, 'src/app/rumScript.js'), 'utf8').includes("import('./pulsesync.js')"));
+const storeChunk = readFileSync(path.join(root, 'src/app/_next/static/chunks/9712-8122808d589b06b5.js'), 'utf8');
+check('мод-модалки в ModalsModel', storeChunk.includes('downloaderSettingsModal: rX.q'));
+check('lrclib в чанке стора', storeChunk.includes('pulseSyncLrclib'));
+const settingsPage = readFileSync(path.join(root, 'src/app/_next/static/chunks/app/(product)/(app)/settings/page-41b7a01cc78ba6f8.js'), 'utf8');
+check('экран «Настройки мода»', settingsPage.includes('Настройки мода') && settingsPage.includes('modScreen'));
 
 // 6) кроссплатформенность: весь нотч-код в main за darwin-гейтом
 const events = readFileSync(path.join(root, 'src/main/events.js'), 'utf8');

@@ -20,8 +20,8 @@ bash tests/notch-local/run-fullstack.sh
 Удалённый стенд (например citrus) — параметром, не дефолтом:
 
 ```
-NOTCH_SSH=m@citrus NOTCH_CDP=http://127.0.0.1:9223 bash tests/notch-local/run.sh
-# предварительно туннель: ssh -f -N -L 9223:127.0.0.1:9222 m@citrus
+NOTCH_SSH=<user@host> NOTCH_CDP=http://127.0.0.1:9223 bash tests/notch-local/run.sh
+# предварительно туннель: ssh -f -N -L 9223:127.0.0.1:9222 <user@host>
 ```
 
 Параметры: NOTCH_CDP (CDP-эндпоинт, дефолт http://127.0.0.1:9222),

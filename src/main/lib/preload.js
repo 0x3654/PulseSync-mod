@@ -384,6 +384,89 @@ const loadWorker = (workerName) => {
 
 registerNativeStoreUpdateCacheSync();
 
+// 5.120: рендерер ЯМ ждёт window.musicDesktop (ванильный преплоад больше не грузится —
+// createWindow указывает на этот файл). Каналы моста маппим на Events мода:
+// main-процесс слушает их же, semantics как у ванильного createMusicDesktopBridge.
+(() => {
+    const subscribeRenderer = (channel, callback) => {
+        const listener = (_event, ...args) => callback(...args);
+        electron_1.ipcRenderer.on(channel, listener);
+        return () => {
+            electron_1.ipcRenderer.removeListener(channel, listener);
+        };
+    };
+    let runtimeInfo = null;
+    try {
+        runtimeInfo = electron_1.ipcRenderer.sendSync('desktop:bootstrap');
+    } catch {
+        runtimeInfo = null;
+    }
+    const isValidRuntimeInfo = (info) =>
+        Boolean(info) &&
+        typeof info === 'object' &&
+        typeof info.version === 'string' &&
+        typeof info.branch === 'string' &&
+        typeof info.platform === 'string' &&
+        typeof info.deviceHostname === 'string' &&
+        typeof info.deviceInfo === 'object';
+    if (!isValidRuntimeInfo(runtimeInfo)) {
+        runtimeInfo = {
+            version: String(config_js_1.config.buildInfo.VERSION),
+            branch: String(config_js_1.config.buildInfo.BRANCH),
+            platform: process.platform,
+            deviceHostname: '',
+            deviceInfo: {
+                manufacturer: '',
+                model: '',
+                uuid: '',
+                os: process.platform,
+                os_version: '',
+                device_id: '',
+                clid: 0,
+            },
+        };
+    }
+    electron_1.contextBridge.exposeInMainWorld('musicDesktop', {
+        runtime: runtimeInfo,
+        window: {
+            minimize: () => electron_1.ipcRenderer.send(events_js_1.Events.WINDOW_MINIMIZE),
+            maximize: () => electron_1.ipcRenderer.send(events_js_1.Events.WINDOW_MAXIMIZE),
+            close: () => electron_1.ipcRenderer.send(events_js_1.Events.WINDOW_CLOSE),
+        },
+        app: {
+            ready: (language) => electron_1.ipcRenderer.send('desktop:application:ready', language),
+            setTheme: (theme) => electron_1.ipcRenderer.send(events_js_1.Events.APPLICATION_THEME, theme),
+            installUpdate: () => electron_1.ipcRenderer.send(events_js_1.Events.INSTALL_UPDATE),
+            onUpdateAvailable: (callback) => subscribeRenderer(events_js_1.Events.UPDATE_AVAILABLE, callback),
+            onRefreshData: (callback) => subscribeRenderer(events_js_1.Events.REFRESH_APPLICATION_DATA, callback),
+            onFirstLaunch: (callback) => subscribeRenderer(events_js_1.Events.FIRST_LAUNCH, callback),
+            onProbabilityBucket: (callback) => subscribeRenderer(events_js_1.Events.PROBABILITY_BUCKET, callback),
+            onLoadReleaseNotes: (callback) => subscribeRenderer(events_js_1.Events.LOAD_RELEASE_NOTES, callback),
+        },
+        authorization: {
+            getPassportLogin: () => electron_1.ipcRenderer.invoke('desktop:authorization:get-passport-login'),
+            getYandexUid: () => electron_1.ipcRenderer.invoke('desktop:authorization:get-yandex-uid'),
+            reportDiagnostic: (payload) => electron_1.ipcRenderer.send('desktop:authorization:diagnostic', payload),
+        },
+        player: {
+            reportState: (state) => electron_1.ipcRenderer.send(events_js_1.Events.PLAYER_STATE, state),
+            onAction: (callback) => subscribeRenderer(events_js_1.Events.PLAYER_ACTION, callback),
+        },
+        navigation: {
+            onOpenDeeplink: (callback) => subscribeRenderer(events_js_1.Events.OPEN_DEEPLINK, callback),
+        },
+        offline: {
+            notifyTracksAvailabilityUpdated: () => electron_1.ipcRenderer.send(events_js_1.Events.TRACKS_AVAILABILITY_UPDATED),
+            notifyRepositoryMetaUpdated: () => electron_1.ipcRenderer.send(events_js_1.Events.REPOSITORY_META_UPDATED),
+            onRefreshTracksAvailability: (callback) => subscribeRenderer(events_js_1.Events.REFRESH_TRACKS_AVAILABILITY, callback),
+            onRefreshRepositoryMeta: (callback) => subscribeRenderer(events_js_1.Events.REFRESH_REPOSITORY_META, callback),
+        },
+        files: {
+            savePng: (defaultPath, buffer) => electron_1.ipcRenderer.send(events_js_1.Events.SAVE_FILE_TO_LOCAL_DISK, defaultPath, buffer),
+        },
+    });
+})();
+
 electron_1.contextBridge.exposeInMainWorld('IS_PREMIUM_USER', () => electron_1.ipcRenderer.invoke('isPremiumUser'));
 electron_1.contextBridge.exposeInMainWorld('HIDE_PULSESYNC_VERSION_IN_TITLEBAR', () => shouldHidePulseSyncVersionInTitleBar());
 electron_1.contextBridge.exposeInMainWorld('IS_MACOS', process.platform === 'darwin');

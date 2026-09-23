@@ -10,7 +10,7 @@ function WebSocket(url) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Эталонная версия приложения: патчи чанков привязаны к ней. Меняется — сначала ревизия патчей.
-const ETALON_VERSION = process.env.NOTCH_ETALON || '5.119.0';
+const ETALON_VERSION = process.env.NOTCH_ETALON || '5.120.0';
 
 const CDP = process.env.NOTCH_CDP || 'http://127.0.0.1:9222';
 

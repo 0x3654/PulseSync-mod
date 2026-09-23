@@ -66,6 +66,49 @@ const dateToDDMonthYYYYProps_js_1 = require('./lib/date/dateToDDMonthYYYYProps.j
 const playlists_js_1 = require('./lib/notchplayer/playlists.js');
 const eventsLogger = new Logger_js_1.Logger('Events');
 
+// 5.120: ванильный bootstrap-мост (preload sendSync ждёт runtimeInfo)
+electron_1.ipcMain.on('desktop:bootstrap', (event) => {
+    const os = require('os');
+    event.returnValue = Object.freeze({
+        version: String(electron_1.app.getVersion()),
+        branch: 'stable',
+        platform: process.platform,
+        deviceInfo: Object.freeze({
+            manufacturer: '',
+            model: '',
+            uuid: '',
+            os: process.platform,
+            os_version: os.release(),
+            device_id: '',
+            clid: 0,
+        }),
+        deviceHostname: os.hostname(),
+    });
+});
+// 5.120: invoke-каналы авторизации (рендерер await-ит их до ready) — верхний уровень:
+// внутри замыкания bootstrap повторная регистрация handle падает при reload окна
+electron_1.ipcMain.handle('desktop:authorization:get-passport-login', async () => {
+    try {
+        const cookies = await electron_1.session.defaultSession.cookies.get({ name: 'yandex_login' });
+        return cookies?.[0]?.value ?? null;
+    } catch {
+        return null;
+    }
+});
+electron_1.ipcMain.handle('desktop:authorization:get-yandex-uid', async () => {
+    try {
+        const cookies = await electron_1.session.defaultSession.cookies.get({ name: 'yandexuid' });
+        return cookies?.[0]?.value ?? null;
+    } catch {
+        return null;
+    }
+});
+electron_1.ipcMain.on('desktop:authorization:diagnostic', (event, payload) => {
+    eventsLogger.info('Auth diagnostic:', JSON.stringify(payload).slice(0, 500));
+});
+// ДЕБАГ 5.120: вдруг рендерер шлёт стейты по ванильному каналу мимо нашего моста
+
+
 // Мод не должен ронять приложение: необработанный rejection в main по умолчанию
 // убивает процесс (Node >=15). Логируем и живём дальше.
 process.on('unhandledRejection', (reason) => {
@@ -332,7 +375,7 @@ const handleApplicationEvents = (window) => {
             eventsLogger.error('Application ready event timeout reached. Restarting in safe mode.');
             restartApplication(true);
         }
-    }, 5000);
+    }, 90000);
     let applicationInitFinishedTimeout;
     let appSafeModeRestartTimeout;
     let safeModeRestartInterval;
@@ -841,7 +884,7 @@ const handleApplicationEvents = (window) => {
         appSafeModeRestartTimeout && clearTimeout(appSafeModeRestartTimeout);
         safeModeRestartInterval && clearInterval(safeModeRestartInterval);
     });
-    electron_1.ipcMain.on(events_js_1.Events.APPLICATION_READY, async (event, language) => {
+    const onApplicationReady = async (event, language) => {
         eventsLogger.info('Event received', events_js_1.Events.APPLICATION_READY);
         void sendFeaturesMetric(buildFeaturesSnapshot());
 
@@ -978,7 +1021,9 @@ const handleApplicationEvents = (window) => {
                 }
             }
         }
-    });
+    };
+    electron_1.ipcMain.on(events_js_1.Events.APPLICATION_READY, onApplicationReady);
+    electron_1.ipcMain.on('desktop:application:ready', onApplicationReady);
     electron_1.ipcMain.on(events_js_1.Events.APPLICATION_INIT_FINISHED, () => {
         eventsLogger.info('Event received', events_js_1.Events.APPLICATION_INIT_FINISHED);
         if (process.platform === 'darwin') {
@@ -1040,6 +1085,9 @@ const handleApplicationEvents = (window) => {
                 state_js_1.state.player.canMoveForward = data.canMoveForward;
             }
 
+            // 5.120 рендерер шлёт пустой PLAYER_STATE {} при инициализации —
+            // без гаранта MiniPlayer/NotchPlayer падают на data.progress.position
+            data.progress = data.progress ?? { position: 0, duration: 0 };
             normalizeSubstitutedTrack(data?.track);
             normalizeSubstitutedTrack(data?.previousTrack);
             normalizeSubstitutedTrack(data?.nextTrack);
@@ -1488,6 +1536,16 @@ if (process.platform === 'darwin') {
             // (лирика, детали, шаринг, переходы) — показываем в основном окне
             if (item.kind !== 'toggle') focusMainWindow();
             mainWindow?.webContents.send(events_js_1.Events.PULSESYNC_API, { action: 'clickTrackMenuItem', args: [item.label, item.parent, item.kind] });
+            return;
+        }
+        if (action === 'NOTCH_SEARCH_QUERY') {
+            // поиск из нотча: основное окно + deeplink на страницу поиска.
+            // Страница читает запрос из ?text= — результаты приходят сразу
+            const searchQuery = String(value ?? '').trim();
+            if (!searchQuery) return;
+            focusMainWindow();
+            mainWindow?.webContents.send(events_js_1.Events.PULSESYNC_API, { action: 'closeTrackMenu' });
+            sendOpenDeeplink(mainWindow, `/search?text=${encodeURIComponent(searchQuery)}`);
             return;
         }
         if (action === 'NOTCH_MENU_OPEN_TRACK' || action === 'NOTCH_MENU_OPEN_ARTIST') {

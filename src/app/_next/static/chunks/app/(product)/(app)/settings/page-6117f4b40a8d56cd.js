@@ -3613,6 +3613,7 @@
                         }, []),
                         onRemoveMinSizeRestrictionsToggle = (0, pulseReactRuntime.useCallback)(
                             async (e) => {
+                                console.log('window.removeMinSizeRestrictions toggled. Value: ', e);
                                 window.nativeSettings.set('modSettings.window.removeMinSizeRestrictions', e);
                                 o((0, pulseJsxRuntime.jsx)(pulseSettingsUi.hT, { error: 'Для применения этой настройки требуется перезапуск приложения' }), {
                                     containerId: pulseSettingsRuntime.uQT.ERROR,

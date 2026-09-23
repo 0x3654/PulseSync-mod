@@ -1,7 +1,7 @@
 #!/bin/bash
 # Общий деплой мода на ОБЕ машины: одна сборка → moro (/Applications) + citrus (/Applications).
 # Использование: bash scripts/deploy-mod.sh [--no-build]
-# Требует: туннель не нужен; ssh m@citrus; на цитрусе /tmp/citrus_install.sh (хэш обновляется отсюда).
+# Требует: туннель не нужен; ssh ${NOTCH_SSH:-$USER@localhost}; на цитрусе /tmp/citrus_install.sh (хэш обновляется отсюда).
 set -e
 cd "$(dirname "$0")/.."
 
@@ -43,8 +43,8 @@ s = re.sub(r'h = "[0-9a-f]{64}"', 'h = "%s"' % os.environ['HASH'], s)
 open('/tmp/citrus_install.sh', 'w').write(s)
 EOF
 tar -C builds/latest -czf /tmp/deploy-unpacked.tgz app.asar.unpacked
-scp -q builds/latest/app.asar m@citrus:/tmp/notch_app.asar
-scp -q /tmp/deploy-unpacked.tgz /tmp/citrus_install.sh m@citrus:/tmp/
-ssh m@citrus 'cd /tmp && rm -rf app.asar.unpacked notch_app.asar.unpacked && tar -xzf deploy-unpacked.tgz && mv app.asar.unpacked notch_app.asar.unpacked && pkill -9 -f "Яндекс Музыка" 2>/dev/null; sleep 2; bash /tmp/citrus_install.sh' 2>&1 | tail -1
+scp -q builds/latest/app.asar ${NOTCH_SSH:-$USER@localhost}:/tmp/notch_app.asar
+scp -q /tmp/deploy-unpacked.tgz /tmp/citrus_install.sh ${NOTCH_SSH:-$USER@localhost}:/tmp/
+ssh ${NOTCH_SSH:-$USER@localhost} 'cd /tmp && rm -rf app.asar.unpacked notch_app.asar.unpacked && tar -xzf deploy-unpacked.tgz && mv app.asar.unpacked notch_app.asar.unpacked && pkill -9 -f "Яндекс Музыка" 2>/dev/null; sleep 2; bash /tmp/citrus_install.sh' 2>&1 | tail -1
 echo "citrus: задеплоено"
 echo "── готово: обе машины на одной сборке $H"
