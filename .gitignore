@@ -166,3 +166,7 @@ native/**/node_modules
 
 /modernized/**
 overlay-runtime
+
+# dev-сборки для инсталлера
+!dist/
+!dist/mod-*.tar.gz

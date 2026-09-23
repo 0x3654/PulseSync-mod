@@ -2,7 +2,7 @@
 
 Запуск на цитрусе (все тесты — только там):
 ```
-ssh -f -N -L 9223:127.0.0.1:9222 m@citrus          # туннель CDP
+ssh -f -N -L 9223:127.0.0.1:9222 ${NOTCH_SSH:-$USER@localhost}          # туннель CDP
 NOTCH_CDP=http://127.0.0.1:9223 node tests/notch-local/e2e.mjs
 NOTCH_CDP=http://127.0.0.1:9223 node tests/notch-local/e2e-negative.mjs
 node tests/notch/structural.test.mjs                # без приложения
