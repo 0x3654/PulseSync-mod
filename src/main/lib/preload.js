@@ -218,8 +218,22 @@ const ensureNonPremiumTitlebarBranding = () => {
         return;
     }
 
-    const titleBar = window.document.querySelector('[class*="TitleBar_root"]');
+    // 5.121: мод-кластер тайтлбара монтируется из pulsesync.js — брендинг живёт
+    // в нём; ванильный TitleBar_root (портал на body) — фолбэк, пока кластера нет.
+    // React-управляемые руты (все TitleBar_root на 5.121) не трогаем: вставка своего
+    // span'а в них воюет с reconciler'ом — брендинг рендерит чанк, гард лишь чистит
+    const isReactManaged = (el) => Object.keys(el).some((k) => k.startsWith('__reactFiber$') || k.startsWith('__reactProps$') || k.startsWith('__reactContainer$'));
+    const titleBar = window.document.querySelector('#pulsesync-titlebar-row, [class*="TitleBar_root"]');
     if (!titleBar) return;
+    if (isReactManaged(titleBar)) {
+        cleanupNonPremiumTitlebarBranding();
+        return;
+    }
+
+    // цель сменилась — вычищаем брендинг, оставшийся в прежнем тайтлбаре
+    for (const stale of window.document.querySelectorAll('[data-pulsesync-titlebar-branding-owned="true"]')) {
+        if (!titleBar.contains(stale)) stale.remove();
+    }
 
     const brandingText = `PulseSync ${config_js_1.config.modification.version}`;
     const head = window.document.head || window.document.documentElement;
@@ -329,7 +343,7 @@ const installNonPremiumTitlebarBrandingGuard = () => {
     const observeTitlebar = () => {
         if (!window.MutationObserver) return;
 
-        const titleBar = window.document.querySelector('[class*="TitleBar_root"]');
+        const titleBar = window.document.querySelector('#pulsesync-titlebar-row, [class*="TitleBar_root"]');
         if (!titleBar || titlebarObserverTarget === titleBar) {
             return;
         }
@@ -384,8 +398,112 @@ const loadWorker = (workerName) => {
 
 registerNativeStoreUpdateCacheSync();
 
+// 5.120: рендерер ЯМ ждёт window.musicDesktop (ванильный преплоад больше не грузится —
+// createWindow указывает на этот файл). Каналы моста маппим на Events мода:
+// main-процесс слушает их же, semantics как у ванильного createMusicDesktopBridge.
+(() => {
+    const subscribeRenderer = (channel, callback) => {
+        const listener = (_event, ...args) => callback(...args);
+        electron_1.ipcRenderer.on(channel, listener);
+        return () => {
+            electron_1.ipcRenderer.removeListener(channel, listener);
+        };
+    };
+    let runtimeInfo = null;
+    try {
+        runtimeInfo = electron_1.ipcRenderer.sendSync('desktop:bootstrap');
+    } catch {
+        runtimeInfo = null;
+    }
+    const isValidRuntimeInfo = (info) =>
+        Boolean(info) &&
+        typeof info === 'object' &&
+        typeof info.version === 'string' &&
+        typeof info.branch === 'string' &&
+        typeof info.platform === 'string' &&
+        typeof info.deviceHostname === 'string' &&
+        typeof info.deviceInfo === 'object';
+    if (!isValidRuntimeInfo(runtimeInfo)) {
+        runtimeInfo = {
+            version: String(config_js_1.config.buildInfo.VERSION),
+            branch: String(config_js_1.config.buildInfo.BRANCH),
+            platform: process.platform,
+            deviceHostname: '',
+            deviceInfo: {
+                manufacturer: '',
+                model: '',
+                uuid: '',
+                os: process.platform,
+                os_version: '',
+                device_id: '',
+                clid: 0,
+            },
+        };
+    }
+    electron_1.contextBridge.exposeInMainWorld('musicDesktop', {
+        runtime: runtimeInfo,
+        window: {
+            minimize: () => electron_1.ipcRenderer.send(events_js_1.Events.WINDOW_MINIMIZE),
+            maximize: () => electron_1.ipcRenderer.send(events_js_1.Events.WINDOW_MAXIMIZE),
+            close: () => electron_1.ipcRenderer.send(events_js_1.Events.WINDOW_CLOSE),
+        },
+        app: {
+            ready: (language) => electron_1.ipcRenderer.send('desktop:application:ready', language),
+            setTheme: (theme) => electron_1.ipcRenderer.send(events_js_1.Events.APPLICATION_THEME, theme),
+            installUpdate: () => electron_1.ipcRenderer.send(events_js_1.Events.INSTALL_UPDATE),
+            onUpdateAvailable: (callback) => subscribeRenderer(events_js_1.Events.UPDATE_AVAILABLE, callback),
+            onRefreshData: (callback) => subscribeRenderer(events_js_1.Events.REFRESH_APPLICATION_DATA, callback),
+            onFirstLaunch: (callback) => subscribeRenderer(events_js_1.Events.FIRST_LAUNCH, callback),
+            onProbabilityBucket: (callback) => subscribeRenderer(events_js_1.Events.PROBABILITY_BUCKET, callback),
+            onLoadReleaseNotes: (callback) => subscribeRenderer(events_js_1.Events.LOAD_RELEASE_NOTES, callback),
+        },
+        authorization: {
+            getPassportLogin: () => electron_1.ipcRenderer.invoke('desktop:authorization:get-passport-login'),
+            getYandexUid: () => electron_1.ipcRenderer.invoke('desktop:authorization:get-yandex-uid'),
+            reportDiagnostic: (payload) => electron_1.ipcRenderer.send('desktop:authorization:diagnostic', payload),
+        },
+        player: {
+            reportState: (state) => {
+        // 5.121: ваниль передаёт mobx-Proxy — contextBridge стирает в {}
+        // распаковываем через Object.keys + геттеры (Proxy поддерживает их)
+        try {
+            if (state && typeof state === 'object') {
+                const clean = {};
+                for (const k of Object.getOwnPropertyNames(state)) {
+                    try { clean[k] = state[k]; } catch {}
+                }
+                // если Object.getOwnPropertyNames не дал данных — пробуем известные ключи
+                if (!Object.keys(clean).length) {
+                    for (const k of ['isPlaying', 'canMoveBackward', 'canMoveForward', 'status', 'volume', 'track', 'progress', 'seekEventSequence']) {
+                        try { const v = state[k]; if (v !== undefined) clean[k] = v; } catch {}
+                    }
+                }
+                electron_1.ipcRenderer.send(events_js_1.Events.PLAYER_STATE, clean);
+                return;
+            }
+        } catch {}
+        electron_1.ipcRenderer.send(events_js_1.Events.PLAYER_STATE, state);
+    },
+            onAction: (callback) => subscribeRenderer(events_js_1.Events.PLAYER_ACTION, callback),
+        },
+        navigation: {
+            onOpenDeeplink: (callback) => subscribeRenderer(events_js_1.Events.OPEN_DEEPLINK, callback),
+        },
+        offline: {
+            notifyTracksAvailabilityUpdated: () => electron_1.ipcRenderer.send(events_js_1.Events.TRACKS_AVAILABILITY_UPDATED),
+            notifyRepositoryMetaUpdated: () => electron_1.ipcRenderer.send(events_js_1.Events.REPOSITORY_META_UPDATED),
+            onRefreshTracksAvailability: (callback) => subscribeRenderer(events_js_1.Events.REFRESH_TRACKS_AVAILABILITY, callback),
+            onRefreshRepositoryMeta: (callback) => subscribeRenderer(events_js_1.Events.REFRESH_REPOSITORY_META, callback),
+        },
+        files: {
+            savePng: (defaultPath, buffer) => electron_1.ipcRenderer.send(events_js_1.Events.SAVE_FILE_TO_LOCAL_DISK, defaultPath, buffer),
+        },
+    });
+})();
+
 electron_1.contextBridge.exposeInMainWorld('IS_PREMIUM_USER', () => electron_1.ipcRenderer.invoke('isPremiumUser'));
 electron_1.contextBridge.exposeInMainWorld('HIDE_PULSESYNC_VERSION_IN_TITLEBAR', () => shouldHidePulseSyncVersionInTitleBar());
+electron_1.contextBridge.exposeInMainWorld('IS_MACOS', process.platform === 'darwin');
 electron_1.contextBridge.exposeInMainWorld('IS_DEVTOOLS_ENABLED', Boolean(store_js_1.getDevMode()));
 electron_1.contextBridge.exposeInMainWorld('EVENTS', events_js_1);
 
@@ -449,7 +567,6 @@ electron_1.contextBridge.exposeInMainWorld('desktopEvents', {
         return electron_1.ipcRenderer.invoke(name, ...args);
     },
     emit(name, ...args) {
-        console.debug('emitted', name, ...args);
         return electron_1.ipcRenderer.emit(name, ...args);
     },
     EVENTS: { ...events_js_1.Events },

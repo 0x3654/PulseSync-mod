@@ -45,6 +45,7 @@ const taskBarExtension_js_1 = require('./lib/taskBarExtension/taskBarExtension.j
 const scrobbleManager_js_1 = require('./lib/scrobble/index.js');
 const { getPulseSyncManager } = require('./lib/pulsesync/PulseSyncManager.js');
 const miniPlayer_js_1 = require('./lib/miniplayer/miniplayer.js');
+const { getNotchPlayer } = require('./lib/notchplayer/notchplayer.js');
 const discordRichPresence_js_1 = require('./lib/discordRichPresence.js');
 const { getYandexStationRuntime } = require('./lib/yandexStation/YandexStationRuntime.js');
 const { registerYandexStationIpc } = require('./lib/yandexStation/registerYandexStationIpc.js');
@@ -62,7 +63,57 @@ const gt_js_1 = __importDefault(require('semver/functions/gt.js'));
 const valid_js_1 = __importDefault(require('semver/functions/valid.js'));
 const i18nKeys_js_1 = require('./constants/i18nKeys.js');
 const dateToDDMonthYYYYProps_js_1 = require('./lib/date/dateToDDMonthYYYYProps.js');
+const playlists_js_1 = require('./lib/notchplayer/playlists.js');
 const eventsLogger = new Logger_js_1.Logger('Events');
+
+// 5.120: ванильный bootstrap-мост (preload sendSync ждёт runtimeInfo)
+electron_1.ipcMain.on('desktop:bootstrap', (event) => {
+    const os = require('os');
+    event.returnValue = Object.freeze({
+        version: String(electron_1.app.getVersion()),
+        branch: 'stable',
+        platform: process.platform,
+        deviceInfo: Object.freeze({
+            manufacturer: '',
+            model: '',
+            uuid: '',
+            os: process.platform,
+            os_version: os.release(),
+            device_id: '',
+            clid: 0,
+        }),
+        deviceHostname: os.hostname(),
+    });
+});
+// 5.120: invoke-каналы авторизации (рендерер await-ит их до ready) — верхний уровень:
+// внутри замыкания bootstrap повторная регистрация handle падает при reload окна
+electron_1.ipcMain.handle('desktop:authorization:get-passport-login', async () => {
+    try {
+        const cookies = await electron_1.session.defaultSession.cookies.get({ name: 'yandex_login' });
+        return cookies?.[0]?.value ?? null;
+    } catch {
+        return null;
+    }
+});
+electron_1.ipcMain.handle('desktop:authorization:get-yandex-uid', async () => {
+    try {
+        const cookies = await electron_1.session.defaultSession.cookies.get({ name: 'yandexuid' });
+        return cookies?.[0]?.value ?? null;
+    } catch {
+        return null;
+    }
+});
+electron_1.ipcMain.on('desktop:authorization:diagnostic', (event, payload) => {
+    eventsLogger.info('Auth diagnostic:', JSON.stringify(payload).slice(0, 500));
+});
+// ДЕБАГ 5.120: вдруг рендерер шлёт стейты по ванильному каналу мимо нашего моста
+
+
+// Мод не должен ронять приложение: необработанный rejection в main по умолчанию
+// убивает процесс (Node >=15). Логируем и живём дальше.
+process.on('unhandledRejection', (reason) => {
+    eventsLogger.error('Unhandled rejection suppressed:', reason?.stack ?? reason);
+});
 const saveFileToLocalDiskLogger = new Logger_js_1.Logger('SaveFileToLocalDisk');
 const yandexStationLogger = new Logger_js_1.Logger('YandexStation');
 const { throttle } = require('./lib/utils.js');
@@ -88,8 +139,38 @@ const WASAPI_EXCLUSIVE_FORCE_FULL_VOLUME_SETTING_KEY = 'modSettings.nativeAudioO
 const YASP_CHUNK_TAP_ENABLED_SETTING_KEY = 'modSettings.nativeAudioOutput.enableYaspChunkTap';
 
 const MiniPlayer = miniPlayer_js_1.getMiniPlayer();
+const NotchPlayer = getNotchPlayer();
+
 
 MiniPlayer.updateSettingsState(store_js_1.getModSettings());
+
+// 5.121: ванильный PLAYER_STATE без трека/прогресса — рендерер (pulsesync.js)
+// сам опрашивает стор плеера и шлёт полный стейт сюда. executeJavaScript из
+// main на этом окне не работает (промис молча не резолвится) — только рендерер.
+let lastRendererTrackState = null;
+let lastRendererTrackStateAt = 0;
+const RENDERER_STATE_FRESH_MS = 5000;
+electron_1.ipcMain.on('NOTCH_TRACK_STATE', (event, payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    lastRendererTrackState = payload;
+    lastRendererTrackStateAt = Date.now();
+    if (process.platform !== 'darwin') return;
+    const prev = NotchPlayer.lastPlayerState ?? {};
+    NotchPlayer.updatePlayerState({
+        ...prev,
+        isPlaying: payload.isPlaying,
+        status: payload.isPlaying ? 'playing' : 'paused',
+        // трек может отсутствовать (стор пустеет на переходах) — держим предыдущий
+        track: payload.track ?? prev.track,
+        progress: payload.progress ?? prev.progress ?? { position: 0, duration: 0 },
+        canMoveForward: state_js_1.state.player.canMoveForward ?? prev.canMoveForward ?? true,
+        canMoveBackward: state_js_1.state.player.canMoveBackward ?? prev.canMoveBackward ?? true,
+        volume: payload.volume ?? prev.volume ?? 1,
+    });
+});
+if (process.platform === 'darwin') {
+    NotchPlayer.updateSettingsState(store_js_1.getModSettings());
+}
 
 const PROGRESS_BAR_THROTTLE_MS = 200;
 const PULSESYNC_APP_AUTO_INSTALL_ENABLED = false;
@@ -320,7 +401,7 @@ const handleApplicationEvents = (window) => {
             eventsLogger.error('Application ready event timeout reached. Restarting in safe mode.');
             restartApplication(true);
         }
-    }, 5000);
+    }, 90000);
     let applicationInitFinishedTimeout;
     let appSafeModeRestartTimeout;
     let safeModeRestartInterval;
@@ -394,6 +475,7 @@ const handleApplicationEvents = (window) => {
     pulseSyncManager_js_1 = getPulseSyncManager(window);
     pulseSyncManager_js_1.start();
     scrobbleManager_js_1.handleRegisterPulseSyncScrobbler(pulseSyncManager_js_1);
+
 
     electron_1.ipcMain.on(events_js_1.Events.DOWNLOAD_CURRENT_TRACK, async (event, trackId) => {
         let callback = (progressRenderer, progressWindow) => {
@@ -807,6 +889,24 @@ const handleApplicationEvents = (window) => {
         eventsLogger.info('Event received', events_js_1.Events.WINDOW_MAXIMIZE);
         (0, toggleMaximize_js_1.toggleMaximize)(window);
     });
+    // из нотча: «открыть YM» — показать главное окно на активном вирт столе
+    electron_1.ipcMain.on('SHOW_MAIN_WINDOW', () => {
+        if (!mainWindow) return;
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        if (process.platform === 'darwin' && !mainWindow.isVisible()) {
+            // macOS: show() открывает на столе, где окно было последний раз —
+            // телепортируем на активный через временный visibleOnAllWorkspaces
+            mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
+            mainWindow.show();
+            mainWindow.focus();
+            setTimeout(() => {
+                if (!mainWindow.isDestroyed()) mainWindow.setVisibleOnAllWorkspaces(false);
+            }, 100);
+        } else {
+            mainWindow.show();
+            mainWindow.focus();
+        }
+    });
     electron_1.ipcMain.on(events_js_1.Events.WINDOW_CLOSE, () => {
         eventsLogger.info('Event received', events_js_1.Events.WINDOW_CLOSE);
         if ([platform_js_1.Platform.WINDOWS, platform_js_1.Platform.LINUX].includes(deviceInfo_js_1.devicePlatform)) {
@@ -828,7 +928,7 @@ const handleApplicationEvents = (window) => {
         appSafeModeRestartTimeout && clearTimeout(appSafeModeRestartTimeout);
         safeModeRestartInterval && clearInterval(safeModeRestartInterval);
     });
-    electron_1.ipcMain.on(events_js_1.Events.APPLICATION_READY, async (event, language) => {
+    const onApplicationReady = async (event, language) => {
         eventsLogger.info('Event received', events_js_1.Events.APPLICATION_READY);
         void sendFeaturesMetric(buildFeaturesSnapshot());
 
@@ -965,9 +1065,14 @@ const handleApplicationEvents = (window) => {
                 }
             }
         }
-    });
+    };
+    electron_1.ipcMain.on(events_js_1.Events.APPLICATION_READY, onApplicationReady);
+    electron_1.ipcMain.on('desktop:application:ready', onApplicationReady);
     electron_1.ipcMain.on(events_js_1.Events.APPLICATION_INIT_FINISHED, () => {
         eventsLogger.info('Event received', events_js_1.Events.APPLICATION_INIT_FINISHED);
+        if (process.platform === 'darwin') {
+            NotchPlayer.restoreFromSettings();
+        }
 
         isApplicationInitFinished = true;
         applicationInitFinishedAt = Date.now();
@@ -1003,13 +1108,53 @@ const handleApplicationEvents = (window) => {
     electron_1.ipcMain.handle(events_js_1.Events.GET_CORS, () => {
         return getAllowedUrls();
     });
-    electron_1.ipcMain.on(events_js_1.Events.PLAYER_STATE, (event, data) => {
-        eventsLogger.info('Event received', events_js_1.Events.PLAYER_STATE, {
-            status: data?.status,
-            trackId: data?.track?.id,
-            position: data?.progress?.position,
-            seekEventSequence: data?.seekEventSequence,
-        });
+    // 5.121+: ванильный preload выигрывает contextBridge — его reportState идёт на этот канал
+    electron_1.ipcMain.on('desktop:player:state', (event, data) => {
+        eventsLogger.info('Event received desktop:player:state');
+        // пересылаем в наш обработчик PLAYER_STATE
+        electron_1.ipcMain.emit(events_js_1.Events.PLAYER_STATE, event, data);
+    });
+    electron_1.ipcMain.on(events_js_1.Events.PLAYER_STATE, async (event, data) => {
+        // 5.121: ваниль шлёт только {isPlaying,canMove*} — трек/прогресс/громкость
+        // берём из стейта, который рендерер шлёт по NOTCH_TRACK_STATE
+        if (data && typeof data === 'object' && !data.track && lastRendererTrackState?.track) {
+            data.track = lastRendererTrackState.track;
+            if (data.progress?.position === 0 && lastRendererTrackState.progress?.position > 0) {
+                data.progress = lastRendererTrackState.progress;
+            }
+            if (typeof data.volume !== 'number' && typeof lastRendererTrackState.volume === 'number') {
+                data.volume = lastRendererTrackState.volume;
+            }
+        }
+        // 5.121: таскбар-расширение без availableActions выходит сразу, а ванильный
+        // PLAYER_STATE их не шлёт (в 5.119/5.120 их добавлял чанк-патч layout).
+        // Синтезируем из canMove* + рендерер-стейта (repeat/shuffle/лайки из поллера).
+        if (data && typeof data === 'object' && !data.availableActions && lastRendererTrackState) {
+            data.availableActions = {
+                moveBackward: data.canMoveBackward === true,
+                moveForward: data.canMoveForward === true,
+                repeat: lastRendererTrackState.repeat ?? 'none',
+                shuffle: lastRendererTrackState.shuffle === true,
+            };
+            data.actionsStore = {
+                repeat: lastRendererTrackState.repeat ?? 'none',
+                shuffle: lastRendererTrackState.shuffle === true,
+                isLiked: lastRendererTrackState.isLiked === true,
+                isDisliked: lastRendererTrackState.isDisliked === true,
+            };
+        }
+        // пустой data статус не форсируем: из «{}» делали playing и нотч врал,
+        // что трек играет, после переходов (очередь пуста, события идут)
+        // ваниль шлёт isPlaying вместо status — конвертируем для нашего хендлера
+        if (data && typeof data === 'object') {
+            if (data.status === undefined && data.isPlaying !== undefined) {
+                data.status = data.isPlaying ? 'playing' : 'paused';
+            }
+            if (data.progress === undefined) {
+                data.progress = { position: 0, duration: 0 };
+            }
+        }
+        eventsLogger.info('PLAYER_STATE RAW:', typeof data, JSON.stringify(data)?.slice(0, 200));
 
         try {
             nativeAudioOutput.updateWasapiExclusivePlayerState(data);
@@ -1024,6 +1169,9 @@ const handleApplicationEvents = (window) => {
                 state_js_1.state.player.canMoveForward = data.canMoveForward;
             }
 
+            // 5.120 рендерер шлёт пустой PLAYER_STATE {} при инициализации —
+            // без гаранта MiniPlayer/NotchPlayer падают на data.progress.position
+            data.progress = data.progress ?? { position: 0, duration: 0 };
             normalizeSubstitutedTrack(data?.track);
             normalizeSubstitutedTrack(data?.previousTrack);
             normalizeSubstitutedTrack(data?.nextTrack);
@@ -1032,6 +1180,13 @@ const handleApplicationEvents = (window) => {
             const isPlayable = isPlayerReady && data.status !== 'idle' && isActiveState;
 
             MiniPlayer.updatePlayerState(structuredClone(data));
+            // нотчем владеет рендерер-поллер (NOTCH_TRACK_STATE): его стейт полнее
+            // и честнее; свежий — не перетираем ванильными событиями, иначе после
+            // переходов (очередь пустеет) нотч мигает/врёт про playing
+            const rendererStateIsFresh = Date.now() - lastRendererTrackStateAt < RENDERER_STATE_FRESH_MS;
+            if (process.platform === 'darwin' && !rendererStateIsFresh) {
+                NotchPlayer.updatePlayerState(structuredClone(data));
+            }
             (0, taskBarExtension_js_1.onPlayerStateChange)(window, data);
 
             if (isPlayable) {
@@ -1045,7 +1200,7 @@ const handleApplicationEvents = (window) => {
             eventsLogger.error('Error handling player state event:', e, e.stack);
         }
 
-        if (data.track && !isPlayerReady) {
+        if ((data.track || data.isPlaying === true) && !isPlayerReady) {
             isPlayerReady = true;
 
             if (store_js_1.getModSettings()?.vibeAnimationEnhancement?.autoLaunchOnAppStartup) {
@@ -1084,6 +1239,15 @@ const handleApplicationEvents = (window) => {
             }
         }
         store_js_1.set(key, value);
+        // рассылаем сет в рендерер: преплоад обновляет свой кэш стора (updateCache),
+        // без этого оверрайды экспериментов (сайдбар-настройки) и гард брендинга
+        // видят изменения только после перезапуска рендерера
+        if (typeof key === 'string') {
+            sendNativeStoreUpdate(key, value, mainWindow);
+        }
+        if (process.platform === 'darwin' && 'string' == typeof key && key.startsWith('modSettings.notchplayer')) {
+            NotchPlayer.onModSettingsChanged(key);
+        }
         if ('string' == typeof key && ('modSettings.globalShortcuts' === key || key.startsWith('modSettings.globalShortcuts.'))) {
             updateGlobalShortcuts();
         }
@@ -1114,6 +1278,9 @@ const handleApplicationEvents = (window) => {
             nativeAudioOutput.refreshWasapiExclusiveVolumePolicy();
         }
         MiniPlayer.updateSettingsState(store_js_1.getModSettings());
+        if (process.platform === 'darwin') {
+            NotchPlayer.updateSettingsState(store_js_1.getModSettings());
+        }
         const featurePatch = buildFeaturesPatch(key, value);
         if (featurePatch) {
             void sendFeaturesMetric(featurePatch);
@@ -1202,6 +1369,12 @@ const handleApplicationEvents = (window) => {
     electron_1.ipcMain.on(events_js_1.Events.TOGGLE_MINIPLAYER, (event) => {
         eventsLogger.info(`Event received`, events_js_1.Events.TOGGLE_MINIPLAYER);
         MiniPlayer.toggle();
+    });
+
+    electron_1.ipcMain.on(events_js_1.Events.TOGGLE_NOTCHPLAYER, (event) => {
+        eventsLogger.info(`Event received`, events_js_1.Events.TOGGLE_NOTCHPLAYER);
+        if (process.platform !== 'darwin') return;
+        NotchPlayer.toggle();
     });
 
     electron_1.ipcMain.on(events_js_1.Events.SAVE_FILE_TO_LOCAL_DISK, async (event, defaultPath, buffer) => {
@@ -1323,6 +1496,9 @@ const sendNativeStoreUpdate = (key, value, window = undefined) => {
         win.webContents.send(events_js_1.Events.NATIVE_STORE_UPDATE, key, value);
         eventsLogger.info('Event sent', events_js_1.Events.NATIVE_STORE_UPDATE, key, value);
         MiniPlayer.updateSettingsState(store_js_1.getModSettings());
+        if (process.platform === 'darwin') {
+            NotchPlayer.updateSettingsState(store_js_1.getModSettings());
+        }
     } else {
         eventsLogger.warn('Event not sent, window is undefined or does not support webContents.send', events_js_1.Events.NATIVE_STORE_UPDATE, key, value);
     }
@@ -1396,6 +1572,99 @@ electron_1.ipcMain.handle('set-zoom-level', setZoomLevel);
 MiniPlayer.onPlayerAction((action, value) => {
     sendPlayerAction(mainWindow, action, value);
 });
+
+if (process.platform === 'darwin') {
+    // Пункты украденного меню пришли из основного рендерера
+    electron_1.ipcMain.on('NOTCH_MENU_ITEMS', (event, items) => {
+        NotchPlayer.setMenuItems(items);
+        // ленивый загрузчик плейлистов приложения не просыпается на кражу —
+        // доставляем список напрямую из API и досылаем в нотч
+        const parent = Array.isArray(items) && items.find((it) => it?.children && /add to playlist|в плейлист|добавить в плейлист/i.test(it.label));
+        if (parent && (!parent.children || parent.children.length <= 1)) {
+            playlists_js_1
+                .getPlaylistMenuItems(event.sender)
+                .then((own) => {
+                    if (!own || !own.length) return;
+                    parent.children = [...own, ...(parent.children || [])];
+                    NotchPlayer.setMenuItems(items);
+                })
+                .catch((e) => eventsLogger.warn('Direct playlist source failed:', e?.message ?? e));
+        }
+    });
+    // Лайк-стейт из рендерера: приложение не пушит PLAYER_STATE при лайке на паузе
+    electron_1.ipcMain.on('NOTCH_LIKE_STATE', (event, likeState) => {
+        NotchPlayer.updateLikeState(likeState);
+    });
+
+    NotchPlayer.onPlayerAction((action, value) => {
+        // Спец-действия нотч-плеера: кража меню, пункты меню и переходы-ссылки
+        const focusMainWindow = () => {
+            if (!mainWindow) return;
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.show();
+            mainWindow.focus();
+        };
+
+        if (action === 'NOTCH_MENU_OPEN_NATIVE') {
+            // воруем родное меню: открываем его в (возможно скрытом) основном окне и читаем пункты
+            mainWindow?.webContents.send(events_js_1.Events.PULSESYNC_API, { action: 'stealTrackMenu' });
+            return;
+        }
+        if (action === 'NOTCH_MENU_DISMISS') {
+            mainWindow?.webContents.send(events_js_1.Events.PULSESYNC_API, { action: 'closeTrackMenu' });
+            return;
+        }
+        if (action === 'NOTCH_MENU_ITEM') {
+            const item = value || {};
+            // наши пункты-плейлисты исполняются прямым API-вызовом, без нативного меню
+            if (item.kind === 'pulse-playlist') {
+                // нотч присылает только label/kind/parent — полный пункт с uid/ревизией ищем в последнем меню
+                const full = (NotchPlayer.lastMenuItems || []).flatMap((it) => [it, ...(it.children || [])]).find((it) => it?.kind === 'pulse-playlist' && it?.label === item.label);
+                playlists_js_1
+                    .addTrackToPlaylist(mainWindow?.webContents, full || item, NotchPlayer.lastPlayerState?.track)
+                    .then((r) => eventsLogger.info('Playlist add via API:', JSON.stringify(r)))
+                    .catch((e) => eventsLogger.error('Playlist add failed:', e?.message ?? e));
+                return;
+            }
+            // чекбоксы (лайк, повтор) исполняются скрыто; всё, что открывает окно
+            // (лирика, детали, шаринг, переходы) — показываем в основном окне
+            if (item.kind !== 'toggle') focusMainWindow();
+            mainWindow?.webContents.send(events_js_1.Events.PULSESYNC_API, { action: 'clickTrackMenuItem', args: [item.label, item.parent, item.kind] });
+            return;
+        }
+        if (action === 'NOTCH_SEARCH_QUERY') {
+            // поиск из нотча: основное окно + deeplink на страницу поиска.
+            // Страница читает запрос из ?text= — результаты приходят сразу
+            const searchQuery = String(value ?? '').trim();
+            if (!searchQuery) return;
+            focusMainWindow();
+            mainWindow?.webContents.send(events_js_1.Events.PULSESYNC_API, { action: 'closeTrackMenu' });
+            sendOpenDeeplink(mainWindow, `/search?text=${encodeURIComponent(searchQuery)}`);
+            return;
+        }
+        if (action === 'NOTCH_MENU_OPEN_TRACK' || action === 'NOTCH_MENU_OPEN_ARTIST') {
+            const track = NotchPlayer.lastPlayerState?.track;
+            const [trackId, compositeAlbumId] = String(track?.id ?? '').split(':');
+            // id бывает составным "trackId:albumId", а бывает голым — тогда альбом из albums[0]
+            const albumId = compositeAlbumId ?? track?.albums?.[0]?.id;
+
+            // ссылки активируют основное окно — даже если оно было скрыто
+            focusMainWindow();
+            mainWindow?.webContents.send(events_js_1.Events.PULSESYNC_API, { action: 'closeTrackMenu' });
+
+            if (action === 'NOTCH_MENU_OPEN_TRACK') {
+                // родной формат ссылки из бара плеера: открывает альбом
+                // вместе с боковой панелью трека (лирика/детали)
+                if (trackId && albumId) sendOpenDeeplink(mainWindow, `/album/track?albumId=${albumId}&trackId=${trackId}`);
+            } else {
+                const artistId = String(value ?? '');
+                if (artistId) sendOpenDeeplink(mainWindow, `/artist/${artistId}`);
+            }
+            return;
+        }
+        sendPlayerAction(mainWindow, action, value);
+    });
+}
 
 electron_1.ipcMain.handle('isPremiumUser', () => {
     eventsLogger.info('Event handle', 'isPremiumUser');
