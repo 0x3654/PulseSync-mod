@@ -156,6 +156,13 @@ const init = () => {
     });
     initField(store_js_1.StoreKeys.WINDOW_MONITOR_ID, null);
     initField(store_js_1.StoreKeys.MOD_SETTINGS, {
+        notchplayer: {
+            enabled: false,
+            display: 'builtin',
+            showShuffleRepeat: false,
+            visible: false,
+        },
+
         discordRPC: {
             enable: true,
             fromYnison: false,
@@ -230,9 +237,11 @@ const init = () => {
             showAudioQualityOnNewWave: true,
         },
         appAutoUpdates: {
-            enableAppAutoUpdate: store.get(store_js_1.StoreKeys.AUTO_UPDATES) ?? true,
+            // fork: app auto-update off by default — a Yandex client update would wipe the mod
+            enableAppAutoUpdate: store.get(store_js_1.StoreKeys.AUTO_UPDATES) ?? false,
             enableAppAutoUpdateByProbability: false,
-            enableModAutoUpdate: true,
+            // fork: off by default — upstream release channel would clobber fork builds
+            enableModAutoUpdate: false,
         },
         scrobblers: {
             lastfm: {
@@ -537,6 +546,8 @@ const getDefaultExperimentOverrides = () => {
     const modSettings = getStore(store_js_1.StoreKeys.MOD_SETTINGS) ?? {};
     const data = {
         ...(getStore(store_js_1.StoreKeys.DEFAULT_MUSIC_EXPERIMENT_OVERRIDES) ?? defaultExperimentOverrides),
+        // отладка: NOTCH_FORCE_WAVE_CARD=1 — принудительный серверный баннер «Моя волна обновилась»
+        ...(process.env.NOTCH_FORCE_WAVE_CARD === '1' ? { WebNextNewWaveTabFeedbackForm: 'on' } : {}),
         WebNextYnisonActivityInterception: getStore(store_js_1.StoreKeys.ENABLE_YNISON_REMOTE_CONTROL) ? 'on' : 'off',
         WebNextDisableConcertsTab: modSettings.showConcertsTab ? 'off' : 'on',
         WebNextDisableNonMusic: modSettings.showNonMusicPage ? 'off' : 'on',

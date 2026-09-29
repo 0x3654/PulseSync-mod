@@ -8,7 +8,7 @@
                 n = s(12583);
             let r = () => {
                 let e = (0, c.config)();
-                return e.set(n.qV, !0), e.set(n.yc, !0), e.set(n.W4, !0), e;
+                return (e.set(n.qV, !0), e.set(n.yc, !0), e.set(n.W4, !0), e);
             };
         },
         37469: (e, t, s) => {

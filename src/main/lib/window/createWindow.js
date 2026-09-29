@@ -61,20 +61,15 @@ const createWindow = async () => {
             nodeIntegrationInWorker: true,
             nodeIntegration: false,
             contextIsolation: true,
+            sandbox: false,
             autoplayPolicy: 'no-user-gesture-required',
+            // 5.120: ванильный root preload.js гейтит musicDesktop по URL-профилю и не несёт
+            // мост мода — грузим преплоад мода (main/lib/preload.js), мост 5.120 внутри него
             preload: node_path_1.default.join(__dirname, '..', 'preload.js'),
         },
     });
     window.isMainWindow = true;
-    window.once('ready-to-show', () => {
-        const shouldShow = !(store_js_1.getModSettings()?.window?.minimizedStart ?? false);
-
-        if ((dimensions?.maximized ?? false) && shouldShow) window.maximize();
-        window.setSize(dimensions?.width ?? 1280, dimensions?.height ?? 800);
-
-        (0, toggleWindowVisibility_js_1.toggleWindowVisibility)(window, shouldShow);
-    });
-    window.removel;
+    window.isMainWindow = true;
     return window;
 };
 exports.createWindow = createWindow;

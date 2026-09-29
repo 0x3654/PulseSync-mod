@@ -21,6 +21,79 @@
 3. Дождитесь окончания установки.
 4. Готово!
 
+## Dev-установка (форк-ветки)
+
+> [!WARNING]
+> Это персональный форк; автор не является частью команды PulseSync. Ветки — личные тестовые сборки.
+
+> [!NOTE]
+> Для стабильной установки используйте [PulseSync Client](https://pulsesync.dev/).
+
+**Ключевые отличия от апстрима:**
+
+> [!TIP]
+> - 🎵 **Нотч-плеер** — капсула в зоне меню-бара: трек, прогресс, громкость колесом над артом, поиск, кража нативного меню трека (масOS)
+> - 🪟 **Экран «Настройки мода»** — все параметры мода одним пунктом в настройках, отдельно от ваниль-секций ЯМ
+> - 🔗 **Порт на 5.120** — реальная поддержка Яндекс Музыка 5.120 (апстрим — только спуф версии)
+> - 📦 **Прямой установщик dev-сборок** — `curl | bash`, для веток, которые PulseSync Client не устанавливает
+
+Ветка соответствует версии клиента:
+- `moro/dev119` → Яндекс Музыка **5.119.x**
+- `moro/dev120` → Яндекс Музыка **5.120.x**
+
+### macOS
+
+```bash
+# одним скриптом (без клона репо):
+curl -fsSL https://raw.githubusercontent.com/0x3654/PulseSync-mod/moro/dev120/scripts/install-mod.sh | bash
+```
+
+Скрипт сам:
+- определяет версию установленного клиента ЯМ;
+- качает архив мода (`dist/mod-<версия>.tar.gz`) из соответствующей ветки;
+- делает бэкап оригинала (`app.asar.orig`);
+- подменяет asar + прописывает целостность + переподписывает.
+
+### Windows
+
+Скачайте из ветки `dist/mod-<версия>-win.zip` (например `mod-5.121-win.zip`), распакуйте и запустите в папке пакета:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install-mod-windows.ps1
+```
+
+Скрипт сам находит клиент (`%LOCALAPPDATA%\Programs\YandexMusic` + реестр),
+определяет версию пакета (5.119/5.120/5.121), бэкапит оригинал и
+integrity-хеш, подменяет asar и патчит хеш целостности в exe. Нативные
+виндовые фичи (превью трека в таскбаре, WASAPI-вывод) уже вшиты в asar.
+
+### Откат
+
+```bash
+# macOS
+curl -fsSL https://raw.githubusercontent.com/0x3654/PulseSync-mod/moro/dev120/scripts/install-mod.sh | bash -s -- --uninstall
+```
+```powershell
+# Windows
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install-mod-windows.ps1 -Uninstall
+```
+
+### Как именно патчим (кратко)
+
+- подмена `resources/app.asar` (+ `app.asar.unpacked` с win32-sharp), sha256 сверяется по `manifest.json`;
+- integrity asar-заголовка: macOS — `ElectronAsarIntegrity` в Info.plist + ad-hoc codesign; Windows — единственный RCDATA-JSON внутри exe (замена хеша той же длины байт);
+- установка «мод поверх мода» обновляет asar, не трогая оригинальные бэкапы;
+- авто-обновления клиента и мода в форке выключены по умолчанию — версии строго руками.
+
+Полное описание конвейера (сборка `release-dist.sh`, install/uninstall на обеих
+платформах, устройство патча) — **[scripts/README-INSTALL.md](scripts/README-INSTALL.md)**;
+виндовая памятка, кладущаяся в zip, — [scripts/README-WIN.md](scripts/README-WIN.md).
+
+### Зависимости
+
+- macOS: `python3` и `shasum` (входят в macOS)
+- Windows: Windows PowerShell 5.1+ (встроен), клиент ЯМ 5.119/5.120/5.121 x64
+
 ## Возможности
 
 ### Discord Статус
