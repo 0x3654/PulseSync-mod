@@ -166,3 +166,16 @@ native/**/node_modules
 
 /modernized/**
 overlay-runtime
+
+# dev-сборки для инсталлера
+!dist/
+!dist/mod-*.tar.gz
+
+# personal deploy tooling (machine-specific, not for the public fork)
+scripts/deploy-*.sh
+tests/notch-local/
+tests/notch/TESTCASES.md
+tests/notch/run.sh
+tests/notch/e2e.mjs
+tests/notch/e2e-negative.mjs
+!dist/mod-*-win.zip

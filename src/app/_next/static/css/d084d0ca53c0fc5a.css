@@ -50,7 +50,10 @@
 }
 .TitleBar_pulseText__FhYv {
     margin-right: 20px;
-    color: rgba(255, 255, 255, 0.29);
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.75);
     font-family: var(--ym-font-text);
     font-weight: 100;
     line-height: var(--ym-font-line-height-label-s);
@@ -792,4 +795,38 @@
 .NavbarMobile_disabledNavigationItem__PA3EE:focus-visible svg,
 .NavbarMobile_disabledNavigationItem__PA3EE:hover svg {
     color: var(--ym-controls-color-primary-text-disabled);
+}
+
+/* macOS: ряд слева от светофора не залезает, кнопки компактнее */
+.TitleBar_root_macos__QjdOZ {
+    box-sizing: border-box;
+    column-gap: 4px;
+    padding-left: 92px;
+    padding-right: 12px;
+}
+.TitleBar_root_macos__QjdOZ .TitleBar_button__9MptL {
+    box-sizing: border-box;
+    flex: 0 0 28px;
+    width: 28px;
+    height: 24px;
+    border-radius: 6px;
+}
+.TitleBar_root_macos__QjdOZ .TitleBar_icon__8Wji9 {
+    display: block;
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+}
+
+/* серверные карточки главной (баннер «Моя волна обновилась», MainPage_feedbackForm,
+   z-index 200) и тайтлбар-кнопки делят верхнюю полосу: резервим кнопкам правые
+   ~100px и держим их поверх карточки */
+.MainPage_actionsBar__agoxp {
+    padding-right: 100px;
+}
+
+button[aria-label='miniplayer'],
+button[aria-label='notchplayer'] {
+    position: relative;
+    z-index: 201;
 }

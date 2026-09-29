@@ -3610,7 +3610,16 @@
                             console.log('hidePulseSyncVersionInTitleBar toggled. Value: ', e);
                             window.nativeSettings.set('modSettings.window.hidePulseSyncVersionInTitleBar', e);
                             setHidePulseSyncVersionInTitleBar(e);
-                        }, []);
+                        }, []),
+                        onRemoveMinSizeRestrictionsToggle = (0, pulseReactRuntime.useCallback)(
+                            async (e) => {
+                                window.nativeSettings.set('modSettings.window.removeMinSizeRestrictions', e);
+                                o((0, pulseJsxRuntime.jsx)(pulseSettingsUi.hT, { error: 'Для применения этой настройки требуется перезапуск приложения' }), {
+                                    containerId: pulseSettingsRuntime.uQT.ERROR,
+                                });
+                            },
+                            [o],
+                        );
                     let hidePulseSyncVersionInTitleBarState = (0, pulseReactRuntime.useState)(
                             window.nativeSettings.get('modSettings.window.hidePulseSyncVersionInTitleBar') ?? !1,
                         ),
@@ -3648,6 +3657,15 @@
                             children: [
                                 (0, pulseJsxRuntime.jsx)('li', {
                                     className: eb().item,
+                                    children: (0, pulseJsxRuntime.jsx)(em, {
+                                        title: 'Снять блокировки минимального размера окна приложения',
+                                        description: 'Позволяет уменьшать окно ниже стандартных 768×650 (до 280×200). Требуется перезапуск приложения',
+                                        onChange: onRemoveMinSizeRestrictionsToggle,
+                                        isChecked: window.nativeSettings.getAsync('modSettings.window.removeMinSizeRestrictions'),
+                                    }),
+                                }),
+                                (0, pulseJsxRuntime.jsx)('li', {
+                                    className: eb().item,
                                     children: (0, pulseJsxRuntime.jsx)(settingBarWithDropdown, {
                                         title: 'Стартовая страница',
                                         description: 'Страница по умолчанию при запуске',
@@ -3683,7 +3701,7 @@
                                         disabled: !a,
                                     }),
                                 }),
-                                (0, pulseJsxRuntime.jsx)('li', {
+                                                                (0, pulseJsxRuntime.jsx)('li', {
                                     className: eb().item,
                                     children: (0, pulseJsxRuntime.jsx)(em, {
                                         title: 'Сохранять размер окна',
@@ -3714,18 +3732,20 @@
                                     className: eb().item,
                                     children: (0, pulseJsxRuntime.jsx)(em, {
                                         title: 'Кнопки в превью панели задач',
-                                        description: 'Добавляет поддержку расширений панели задач.',
+                                        description: 'Добавляет поддержку расширений панели задач (Windows)',
                                         onChange: onTaskBarToggle,
                                         isChecked: window.nativeSettings.getAsync('modSettings.taskBarExtensions.enable'),
+                                        disabled: navigator.userAgent.includes('Macintosh'),
                                     }),
                                 }),
                                 (0, pulseJsxRuntime.jsx)('li', {
                                     className: eb().item,
                                     children: (0, pulseJsxRuntime.jsx)(em, {
                                         title: 'Использовать обложку трека в превью окна',
-                                        description: 'Если трек играет, заменяет динамичное превью на картинку обложки трека',
+                                        description: 'Если трек играет, заменяет динамичное превью на картинку обложки трека (Windows)',
                                         onChange: onTaskbarExtensionsCoverAsThumbnailToggle,
                                         isChecked: window.nativeSettings.getAsync('modSettings.taskBarExtensions.coverAsThumbnail'),
+                                        disabled: navigator.userAgent.includes('Macintosh'),
                                     }),
                                 }),
                             ],
@@ -3752,6 +3772,27 @@
                         onAlwaysShowPlayerTimestampsToggle = (0, pulseReactRuntime.useCallback)(async (e) => {
                             console.log('modSettings.miniplayer.alwaysShowPlayerTimestamps toggled. Value: ', e);
                             window.nativeSettings.set('modSettings.miniplayer.alwaysShowPlayerTimestamps', e);
+                        }, []),
+                        [notchPlayerEnabled, setNotchPlayerEnabled] = (0, pulseReactRuntime.useState)(
+                            window.nativeSettings.get('modSettings.notchplayer.enabled') === !0,
+                        ),
+                        onNotchPlayerToggle = (0, pulseReactRuntime.useCallback)(async (e) => {
+                            window.nativeSettings.set('modSettings.notchplayer.enabled', e);
+                            setNotchPlayerEnabled(e);
+                        }, []),
+                        [notchDisplay, setNotchDisplay] = (0, pulseReactRuntime.useState)(
+                            window.nativeSettings.get('modSettings.notchplayer.display') ?? 'builtin',
+                        ),
+                        onNotchDisplayChange = (0, pulseReactRuntime.useCallback)(async (e) => {
+                            window.nativeSettings.set('modSettings.notchplayer.display', e);
+                            setNotchDisplay(e);
+                        }, []),
+                        [showShuffleRepeat, setShowShuffleRepeat] = (0, pulseReactRuntime.useState)(
+                            window.nativeSettings.get('modSettings.notchplayer.showShuffleRepeat') === !0,
+                        ),
+                        onShowShuffleRepeatToggle = (0, pulseReactRuntime.useCallback)(async (e) => {
+                            window.nativeSettings.set('modSettings.notchplayer.showShuffleRepeat', e);
+                            setShowShuffleRepeat(e);
                         }, []);
                     return (0, pulseJsxRuntime.jsx)(pulseModal, {
                         className: ev().list,
@@ -3769,7 +3810,7 @@
                             className: ''.concat(eb().root, ' ').concat(ev().list),
                             style: { width: '32.125rem', maxHeight: '37.5rem', gap: 0 },
                             children: [
-                                (0, pulseJsxRuntime.jsx)('li', {
+                                                                (0, pulseJsxRuntime.jsx)('li', {
                                     className: eb().item,
                                     children: (0, pulseJsxRuntime.jsx)(em, {
                                         title: 'Сохранять размер окна',
@@ -3791,9 +3832,10 @@
                                     className: eb().item,
                                     children: (0, pulseJsxRuntime.jsx)(em, {
                                         title: 'Не отображать окно в таскбаре',
-                                        description: 'Работает только если миниплеер закреплён поверх других окон',
+                                        description: 'Работает только если миниплеер закреплён поверх других окон (Windows)',
                                         onChange: onSkipTaskbarToggle,
                                         isChecked: window.nativeSettings.getAsync('modSettings.miniplayer.skipTaskbar'),
+                                        disabled: navigator.userAgent.includes('Macintosh'),
                                     }),
                                 }),
                                 (0, pulseJsxRuntime.jsx)('li', {
@@ -3805,6 +3847,42 @@
                                         isChecked: window.nativeSettings.getAsync('modSettings.miniplayer.alwaysShowPlayerTimestamps'),
                                     }),
                                 }),
+window.PLATFORM === 'darwin' &&
+                                    (0, pulseJsxRuntime.jsx)('li', {
+                                        className: eb().item,
+                                        children: (0, pulseJsxRuntime.jsx)(em, {
+                                            title: 'Плеер у выреза (нотч)',
+                                            description: 'Капсула плеера в зоне меню-бара (macOS)',
+                                            onChange: onNotchPlayerToggle,
+                                            isChecked: notchPlayerEnabled === !0,
+                                        }),
+                                    }),
+                                                                window.PLATFORM === 'darwin' &&
+                                    (0, pulseJsxRuntime.jsx)('li', {
+                                        className: eb().item,
+                                        children: (0, pulseJsxRuntime.jsx)(settingBarWithDropdown, {
+                                            title: 'Где показывать плеер у выреза',
+                                            description: 'Где показывать капсулу нотч-плеера',
+                                            onChange: onNotchDisplayChange,
+                                            value: notchDisplay,
+                                            direction: 'bottom',
+                                            options: [
+                                                { value: 'builtin', label: 'Встроенный' },
+                                                { value: 'primary', label: 'Основной' },
+                                                { value: 'all', label: 'Все мониторы' },
+                                            ],
+                                        }),
+                                    }),
+window.PLATFORM === 'darwin' &&
+                                    (0, pulseJsxRuntime.jsx)('li', {
+                                        className: eb().item,
+                                        children: (0, pulseJsxRuntime.jsx)(em, {
+                                            title: 'Шаффл и повтор у выреза',
+                                            description: 'Кнопки перемешивания и повтора между дизлайком, плей и лайком.',
+                                            onChange: onShowShuffleRepeatToggle,
+                                            isChecked: showShuffleRepeat === !0,
+                                        }),
+                                    }),
                             ],
                         }),
                     });

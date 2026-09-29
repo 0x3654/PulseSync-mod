@@ -386,6 +386,7 @@ registerNativeStoreUpdateCacheSync();
 
 electron_1.contextBridge.exposeInMainWorld('IS_PREMIUM_USER', () => electron_1.ipcRenderer.invoke('isPremiumUser'));
 electron_1.contextBridge.exposeInMainWorld('HIDE_PULSESYNC_VERSION_IN_TITLEBAR', () => shouldHidePulseSyncVersionInTitleBar());
+electron_1.contextBridge.exposeInMainWorld('IS_MACOS', process.platform === 'darwin');
 electron_1.contextBridge.exposeInMainWorld('IS_DEVTOOLS_ENABLED', Boolean(store_js_1.getDevMode()));
 electron_1.contextBridge.exposeInMainWorld('EVENTS', events_js_1);
 
@@ -449,7 +450,6 @@ electron_1.contextBridge.exposeInMainWorld('desktopEvents', {
         return electron_1.ipcRenderer.invoke(name, ...args);
     },
     emit(name, ...args) {
-        console.debug('emitted', name, ...args);
         return electron_1.ipcRenderer.emit(name, ...args);
     },
     EVENTS: { ...events_js_1.Events },
