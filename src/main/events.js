@@ -832,8 +832,54 @@ const handleApplicationEvents = (window) => {
             electron_1.app.quit();
         }
     });
-    electron_1.ipcMain.on(events_js_1.Events.INSTALL_UPDATE, () => {
+    electron_1.ipcMain.on(events_js_1.Events.INSTALL_UPDATE, async () => {
         eventsLogger.info('Event received', events_js_1.Events.INSTALL_UPDATE);
+
+        const version = updater.latestAvailableVersion;
+        const shortMajor = version ? version.split('.').slice(0, 2).join('.') : null; // 5.122
+        const branch = shortMajor ? `moro/dev${shortMajor.slice(2)}` : null; // moro/dev122
+        let portUrl = null;
+        if (branch) {
+            try {
+                // fetch (undici), а не electron net.fetch: net-запросы идут через
+                // webRequest-перехватчики клиента и режутся CORS-allowlist'ом
+                // (net::ERR_BLOCKED_BY_CLIENT на api.github.com)
+                const response = await fetch(`https://api.github.com/repos/0x3654/PulseSync-mod/branches/${branch}`);
+                eventsLogger.info('Fork port check', branch, response.status);
+                if (response.ok) {
+                    portUrl = `https://github.com/0x3654/PulseSync-mod/blob/${branch}/README.md`;
+                }
+            } catch (error) {
+                eventsLogger.warn('Fork port check failed', branch, error?.message ?? error);
+            }
+        }
+        // модал уровня приложения, не окна: основное окно может быть скрыто
+        // (трей/нотч) — привязанный к нему диалог был бы невидим и вешал поток
+        const { response } = await electron_1.dialog.showMessageBox({
+            type: 'warning',
+            title: 'Обновление Яндекс Музыки',
+            message: portUrl
+                ? `Вышла Яндекс Музыка ${version}, порт форка уже готов (${branch}).`
+                : `Вышла Яндекс Музыка ${version ?? '(версия неизвестна)'}, порта форка пока нет.`,
+            detail: portUrl
+                ? 'Откроется инструкция по установке сборки форка под новую версию (одна команда). Ничего не удалится, пока не решишь сам.'
+                : 'Обновление откатит клиент к ванили — мод слетит и вернётся только с портом новой версии. Моды-настройки сохранятся.',
+            buttons: portUrl ? ['Открыть установку форка', 'Отмена'] : ['Всё равно обновить (мод слетит)', 'Отмена'],
+            defaultId: 0,
+            cancelId: 1,
+            noLink: true,
+        });
+        if (response !== 0) {
+            eventsLogger.info('Update declined by user');
+            return;
+        }
+        if (portUrl) {
+            eventsLogger.info('Opening fork install instructions', portUrl);
+            electron_1.shell.openExternal(portUrl);
+            return;
+        }
+        eventsLogger.info('Confirmed vanilla update, installing', version);
+
         updater.install();
     });
     electron_1.ipcMain.on(events_js_1.Events.APP_STALL_CANCEL_RESTART, () => {
