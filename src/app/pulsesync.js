@@ -2107,45 +2107,474 @@ window.findCssRuleByPartialName = function (pName) {
                     playerInst.injectLast?.({ entitiesData });
                 });
             },
-            likeTrack: (trackId, options = {}) => {
-                const playerInst = getPlayerInstance();
-                const entity = playerInst?.state?.queueState?.currentEntity?.value?.entity;
-                const entityId = trackId ? createEntityId(trackId, options?.albumId) : entity?.entityData?.meta?.id;
-                return tryStoreMethod(entity?.likeStore, ['likeTrack', 'setTrackLiked', 'addTrackLike', 'toggleTrackLike'], entityId);
+            // 5.121: лайки живут в Library-модели рут-стора (likeStore стал коллекцией
+            // данных без методов) — toggleTrackLike/toggleTrackDislike + items "1"/"0"
+            likeTrack: async (trackId, options = {}) => {
+                const lib = window.__pulseStore?.library;
+                const id = trackId ?? window.pulsesyncApi?.getCurrentTrack?.()?.id;
+                if (!lib || id == null) return false;
+                if (lib.isTrackLiked?.(String(id))) return true;
+                return lib.toggleTrackLike({ entityId: id, albumId: options?.albumId, userId: window.__pulseStore?.user?.account?.data?.uid });
             },
-            unlikeTrack: (trackId, options = {}) => {
-                const playerInst = getPlayerInstance();
-                const entity = playerInst?.state?.queueState?.currentEntity?.value?.entity;
-                const entityId = trackId ? createEntityId(trackId, options?.albumId) : entity?.entityData?.meta?.id;
-                return tryStoreMethod(entity?.likeStore, ['unlikeTrack', 'removeTrackLike', 'setTrackUnliked'], entityId);
+            unlikeTrack: async (trackId, options = {}) => {
+                const lib = window.__pulseStore?.library;
+                const id = trackId ?? window.pulsesyncApi?.getCurrentTrack?.()?.id;
+                if (!lib || id == null || !lib.isTrackLiked?.(String(id))) return false;
+                return lib.toggleTrackLike({ entityId: id, albumId: options?.albumId, userId: window.__pulseStore?.user?.account?.data?.uid });
             },
-            dislikeTrack: (trackId, options = {}) => {
-                const playerInst = getPlayerInstance();
-                const entity = playerInst?.state?.queueState?.currentEntity?.value?.entity;
-                const entityId = trackId ? createEntityId(trackId, options?.albumId) : entity?.entityData?.meta?.id;
-                return tryStoreMethod(entity?.likeStore, ['dislikeTrack', 'setTrackDisliked', 'addTrackDislike', 'toggleTrackDislike'], entityId);
+            dislikeTrack: async (trackId, options = {}) => {
+                const lib = window.__pulseStore?.library;
+                const id = trackId ?? window.pulsesyncApi?.getCurrentTrack?.()?.id;
+                if (!lib || id == null) return false;
+                if (lib.isTrackDisliked?.(String(id))) return true;
+                return lib.toggleTrackDislike({ entityId: id, albumId: options?.albumId, userId: window.__pulseStore?.user?.account?.data?.uid });
             },
-            undislikeTrack: (trackId, options = {}) => {
-                const playerInst = getPlayerInstance();
-                const entity = playerInst?.state?.queueState?.currentEntity?.value?.entity;
-                const entityId = trackId ? createEntityId(trackId, options?.albumId) : entity?.entityData?.meta?.id;
-                return tryStoreMethod(entity?.likeStore, ['undislikeTrack', 'removeTrackDislike', 'setTrackUndisliked'], entityId);
+            undislikeTrack: async (trackId, options = {}) => {
+                const lib = window.__pulseStore?.library;
+                const id = trackId ?? window.pulsesyncApi?.getCurrentTrack?.()?.id;
+                if (!lib || id == null || !lib.isTrackDisliked?.(String(id))) return false;
+                return lib.toggleTrackDislike({ entityId: id, albumId: options?.albumId, userId: window.__pulseStore?.user?.account?.data?.uid });
             },
             isTrackLiked: (trackId, albumId) => {
-                const playerInst = getPlayerInstance();
+                const lib = window.__pulseStore?.library;
+                const id = trackId ?? window.pulsesyncApi?.getCurrentTrack?.()?.id;
+                return Boolean(id != null && lib?.isTrackLiked?.(String(id)));
                 const entity = playerInst?.state?.queueState?.currentEntity?.value?.entity;
                 const likeStore = entity?.likeStore;
                 const entityId = trackId ? createEntityId(trackId, albumId) : entity?.entityData?.meta?.id;
                 return entityId ? !!likeStore?.isTrackLiked?.(entityId) : false;
             },
             isTrackDisliked: (trackId, albumId) => {
-                const playerInst = getPlayerInstance();
-                const entity = playerInst?.state?.queueState?.currentEntity?.value?.entity;
-                const likeStore = entity?.likeStore;
-                const entityId = trackId ? createEntityId(trackId, albumId) : entity?.entityData?.meta?.id;
-                return entityId ? !!likeStore?.isTrackDisliked?.(entityId) : false;
+                const lib = window.__pulseStore?.library;
+                const id = trackId ?? window.pulsesyncApi?.getCurrentTrack?.()?.id;
+                return Boolean(id != null && lib?.isTrackDisliked?.(String(id)));
             },
-            getState: () => getPlayerInstance()?.state,
+            // Best-effort: click the "..." track context-menu button in the player bar.
+            // Returns true when a plausible button was found and clicked.
+            openTrackMenu: () => {
+                const buttonAccessibleName = (button) => {
+                    const label = button.getAttribute('aria-label') || button.getAttribute('title') || button.textContent || '';
+                    return label.trim().toLowerCase();
+                };
+                const looksLikeMenuButton = (button) => {
+                    const name = buttonAccessibleName(button);
+                    if (name && /меню|menu|ещё|еще|more|прочее/.test(name)) return true;
+                    // Ellipsis icons are rendered as three dots (circles) inside the svg.
+                    const dots = button.querySelectorAll('svg circle, svg ellipse').length;
+                    return dots >= 3;
+                };
+                const fireClick = (button) => {
+                    const rect = button.getBoundingClientRect();
+                    const options = {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window,
+                        clientX: rect.left + rect.width / 2,
+                        clientY: rect.top + rect.height / 2,
+                    };
+                    for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+                        button.dispatchEvent(new MouseEvent(type, options));
+                    }
+                };
+
+                // Точный якорь кнопки «⋯» в баре плеера; эвристика — запасной путь
+                // (она могла промахнуться и нажать пункт меню вместо кнопки)
+                const pinned = document.querySelector('button[data-test-id="PLAYERBAR_DESKTOP_CONTEXT_MENU_BUTTON"]');
+                const menuButton = pinned
+                    ? pinned
+                    : Array.from(document.querySelectorAll('button')).reverse().find(looksLikeMenuButton);
+                if (!menuButton) return false;
+
+                menuButton.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                // теми же событиями, что и пункты меню: голый MouseEvent триггер
+                // игнорирует (особенно при простое плеера)
+                const h = window.pulsesyncApi.__trackMenuHelpers();
+                h.hover(menuButton);
+                window.setTimeout(() => h.fire(menuButton), 60);
+                return true;
+            },
+            // Хелперы для кражи родного меню нотч-плеером (кэшируются). Меню на время
+// кражи/кликов скрывается через visibility — для пользователя оно рисуется в нотче.
+            __trackMenuHelpers: () => {
+                if (window.__notchTrackMenuHelpers) return window.__notchTrackMenuHelpers;
+                const STYLE_ID = 'pulsesync-notch-menu-hider';
+                const point = (el) => {
+                    const rect = el.getBoundingClientRect();
+                    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+                };
+                // некоторые пункты игнорируют MouseEvent с типом pointer* — нужен PointerEvent
+                const mkEvent = (type, p) => {
+                    const base = { bubbles: true, cancelable: true, view: window, clientX: p.x, clientY: p.y };
+                    if (type.startsWith('pointer') && typeof PointerEvent === 'function') {
+                        return new PointerEvent(type, { ...base, pointerId: 1, pointerType: 'mouse', isPrimary: true });
+                    }
+                    return new MouseEvent(type, base);
+                };
+                const helpers = {
+                    lastActivityAt: 0,
+                    pendingUnhide: 0,
+                    setHidden(hidden) {
+                        if (hidden) {
+                            helpers.lastActivityAt = Date.now();
+                            // новая кража отменяет отложенное снятие скрытия
+                            if (helpers.pendingUnhide) {
+                                window.clearTimeout(helpers.pendingUnhide);
+                                helpers.pendingUnhide = 0;
+                            }
+                        }
+                        let style = document.getElementById(STYLE_ID);
+                        if (hidden && !style) {
+                            style = document.createElement('style');
+                            style.id = STYLE_ID;
+                            style.textContent = '[role=menu]{visibility:hidden !important}';
+                            document.head.appendChild(style);
+                        } else if (!hidden && style) {
+                            style.remove();
+                        }
+                    },
+                    setHiddenSoon(delay) {
+                        if (helpers.pendingUnhide) window.clearTimeout(helpers.pendingUnhide);
+                        helpers.pendingUnhide = window.setTimeout(() => {
+                            helpers.pendingUnhide = 0;
+                            helpers.setHidden(false);
+                        }, delay);
+                    },
+                    hover(el) {
+                        const p = point(el);
+                        for (const type of ['pointermove', 'mouseover', 'mouseenter', 'mousemove']) {
+                            el.dispatchEvent(mkEvent(type, p));
+                        }
+                    },
+                    fire(el) {
+                        const p = point(el);
+                        for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+                            el.dispatchEvent(mkEvent(type, p));
+                        }
+                    },
+                    visible(el) {
+                        const rect = el.getBoundingClientRect();
+                        return rect.width > 0 && rect.height > 0;
+                    },
+                    label(el) {
+                        return (el.getAttribute('aria-label') || el.textContent || '').trim();
+                    },
+                    readItems(menu, isRootMenu) {
+                        return [...menu.querySelectorAll('[role=menuitem], [role=menuitemcheckbox]')]
+                            .map((el) => {
+                                const role = el.getAttribute('role');
+                                const useEl = el.querySelector('svg use');
+                                const iconHref = useEl ? useEl.getAttribute('xlink:href') || useEl.getAttribute('href') || '' : '';
+                                const item = {
+                                    label: helpers.label(el),
+                                    // чекбоксы (лайк, повтор...) исполняем нативным кликом БЕЗ
+                                    // фокуса окна — какой именно чекбокс, решает приложение
+                                    kind: role === 'menuitemcheckbox' ? 'toggle' : 'item',
+                                    toggle: null,
+                                    disabled: el.getAttribute('aria-disabled') === 'true',
+                                    // имя иконки из спрайта (#liked_xxs → liked_xxs) — рендерим своим спрайтом
+                                    icon: iconHref.split('#')[1] || null,
+                                    hasPopup: !!el.getAttribute('aria-haspopup'),
+                                    children: null,
+                                };
+                                return item;
+                            })
+                            .filter((item) => item.label);
+                    },
+                };
+                window.__notchTrackMenuHelpers = helpers;
+                return helpers;
+            },
+            // Открыть родное меню невидимо и прочитать пункты (в main → нотч);
+            // сабменю родителей дочитываем следом с обновлением списка.
+            stealTrackMenu: () => {
+                // closeTrackMenu только что закрыл меню — кража в этом окне отменит
+                // её отложенную чистку hider'а и оставит стиль висеть до 25с-страховки
+                // (наблюдается на холодном старте: тест кликает кнопку меню сразу
+                // после close). Подавляем кражу на короткое окно.
+                if (Date.now() < (window.__notchStealSuppressUntil || 0)) return;
+                const h = window.pulsesyncApi.__trackMenuHelpers();
+                // кэш прочитанных сабменю: список в нотче мгновенный, enrich
+                // обновит его следом (stale-while-revalidate)
+                const subCache = (window.__notchSubMenuCache ??= new Map());
+                // новая кража отменяет пуши предыдущей (клиент нотча не должен
+                // получать вперемешку данные двух сессий)
+                const generation = (window.__notchStealGeneration = (window.__notchStealGeneration || 0) + 1);
+                const push = (items) => {
+                    if (generation === window.__notchStealGeneration) {
+                        window.desktopEvents?.send?.('NOTCH_MENU_ITEMS', items);
+                    }
+                };
+                const enrichWithSubmenus = (items) => {
+                    const parents = items.filter((item) => item.hasPopup);
+                    if (!parents.length) return;
+                    const enrichGeneration = generation;
+                    const aborted = () => enrichGeneration !== window.__notchStealGeneration;
+                    window.__notchMenuBusy = true;
+                    let index = 0;
+                    // прочитанные сабменю помечаем, чтобы не отдать их следующему родителю
+                    const claimedSubs = new Set();
+                    const step = () => {
+                        if (aborted()) {
+                            window.__notchMenuBusy = false;
+                            return;
+                        }
+                        if (index >= parents.length) {
+                            window.__notchMenuBusy = false;
+                            return;
+                        }
+                        const parent = parents[index];
+                        index += 1;
+                        const root = document.querySelector('[role=menu]');
+                        const el = root ? [...root.querySelectorAll('[role=menuitem]')].find((e) => h.label(e) === parent.label) : null;
+                        if (!el) {
+                            step();
+                            return;
+                        }
+                        // радикс сам закрывает прошлое сабменю при переходе ховера.
+                        // Сабменю монтируется с задержкой (на холодном приложении >500мс) —
+                        // ховерим с повторами и поллим его появление, а не ждём фикс-таймаут
+                        parent.loading = true;
+                        const getSub = () => [...document.querySelectorAll('[role=menu]')].slice(1).find((m) => !claimedSubs.has(m));
+                        const waitForSub = (cb, tries = 0) => {
+                            const sub = getSub();
+                            if (sub) {
+                                cb(sub);
+                                return;
+                            }
+                            if (tries > 30) {
+                                // сабменю не смонтировалось — пропускаем родителя
+                                parent.loading = false;
+                                step();
+                                return;
+                            }
+                            if (tries % 3 === 0) h.hover(el);
+                            window.setTimeout(() => waitForSub(cb, tries + 1), 250);
+                        };
+                        h.hover(el);
+                        waitForSub((sub) => {
+                            // пункты сабменю лениво догружаются — ждём стабилизации списка
+                            const scrollerOf = (sub) => [sub, ...sub.children].find((node) => node.scrollHeight > node.clientHeight + 4) || sub;
+                            let tick = 0;
+                            const settle = (sub, lastCount, sameTicks, deadline) => {
+                                try {
+                                    settleTick(sub, lastCount, sameTicks, deadline);
+                                } catch (e) {
+                                    // цепочка молча умирала и спиннер висел вечно
+                                    finish(sub);
+                                }
+                            };
+                            const settleTick = (sub, lastCount, sameTicks, deadline) => {
+                                if (aborted()) {
+                                    window.__notchMenuBusy = false;
+                                    return;
+                                }
+                                if (Date.now() > deadline) {
+                                    pumpScroll(sub, 0, new Map());
+                                    return;
+                                }
+                                tick += 1;
+                                // догрузка живёт пока «курсор» над родителем — поддерживаем ховер
+                                if (tick % 3 === 0) h.hover(el);
+                                const current = h.readItems(sub, false);
+                                const count = current.length;
+                                // пушим инкрементально — список растёт на глазах
+                                if (count !== lastCount && count > 0) {
+                                    parent.children = current;
+                                    push(items);
+                                }
+                                if (count === lastCount && count > 0) {
+                                    sameTicks += 1;
+                                } else {
+                                    sameTicks = 0;
+                                }
+                                if (sameTicks >= 2) {
+                                    pumpScroll(sub, 0, new Map());
+                                    return;
+                                }
+                                window.setTimeout(() => settle(sub, count, sameTicks, deadline), 150);
+                            };
+                            const pumpScroll = (sub, pumps, collected) => {
+                                if (aborted()) {
+                                    window.__notchMenuBusy = false;
+                                    return;
+                                }
+                                h.readItems(sub, false).forEach((item) => collected.set(item.label, item));
+                                const scroller = scrollerOf(sub);
+                                if (pumps > 20 || scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) {
+                                    scroller.scrollTop = 0;
+                                    finish(sub, collected);
+                                    return;
+                                }
+                                scroller.scrollTop = Math.min(scroller.scrollTop + scroller.clientHeight, scroller.scrollHeight);
+                                window.setTimeout(() => pumpScroll(sub, pumps + 1, collected), 280);
+                            };
+                            const finish = (sub, collected) => {
+                                const items2 = collected ?? new Map(h.readItems(sub, false).map((item) => [item.label, item]));
+                                parent.children = [...items2.values()];
+                                parent.loading = false;
+                                subCache.set(parent.label, parent.children);
+                                push(items);
+                                step();
+                            };
+                            claimedSubs.add(sub);
+                            // в скрытом окне таймеры троттлятся — дедлайн длиннее
+                            const deadline = Date.now() + (document.visibilityState === 'visible' ? 2500 : 9000);
+                            settle(sub, -1, 0, deadline);
+                        });
+                    };
+                    step();
+                };
+
+                h.setHidden(true);
+                if (!document.querySelector('[role=menu]')) {
+                    window.pulsesyncApi.openTrackMenu();
+                }
+                // Radix монтирует пункты прогрессивно — ждём стабилизации списка,
+                // иначе пушится первый неполный кадр (1 пункт из 14)
+                let lastCount = -1;
+                let stableTicks = 0;
+                let tries = 0;
+                let firstSeenAt = 0;
+                const timer = window.setInterval(() => {
+                    tries += 1;
+                    const root = document.querySelector('[role=menu]');
+                    const items = root ? h.readItems(root, true) : null;
+                    const count = items ? items.length : 0;
+                    if (count > 0 && !firstSeenAt) firstSeenAt = Date.now();
+                    stableTicks = count === lastCount && count > 0 ? stableTicks + 1 : 0;
+                    lastCount = count;
+                    const settled = count > 0 && stableTicks >= 2 && firstSeenAt && Date.now() - firstSeenAt >= 300;
+                    if (settled || tries > 20) {
+                        window.clearInterval(timer);
+                        if (items) {
+                            items.forEach((item) => {
+                                if (item.hasPopup && subCache.has(item.label)) {
+                                    item.children = subCache.get(item.label);
+                                    item.loading = false;
+                                }
+                            });
+                        }
+                        // пустой список не шлём: неудачная кража не должна
+                        // затирать уже доставленные пункты
+                        if (items && items.length > 0) {
+                            push(items);
+                            enrichWithSubmenus(items);
+                        }
+                        // страховка: неиспользованное меню тихо закрываем и раскрываем
+                        window.setTimeout(() => {
+                            if (Date.now() - window.pulsesyncApi.__trackMenuHelpers().lastActivityAt >= 25000) {
+                                window.pulsesyncApi.closeTrackMenu();
+                            }
+                        }, 25050);
+                    }
+                }, 100);
+            },
+            // Нажать пункт меню (вложенный — сначала раскрыв сабменю родителя ховером).
+            clickTrackMenuItem: (label, parentLabel, kind) => {
+                const h = window.pulsesyncApi.__trackMenuHelpers();
+                // клик важнее дочитки: прерываем enrich, меню освобождается
+                window.__notchStealGeneration = (window.__notchStealGeneration || 0) + 1;
+                window.__notchMenuBusy = false;
+                const findEverywhere = () =>
+                    [...document.querySelectorAll('[role=menu] [role=menuitem], [role=menu] [role=menuitemcheckbox]')].filter(
+                        (el) => h.visible(el) && h.label(el) === String(label),
+                    );
+                const findTop = (lbl) => {
+                    const root = document.querySelector('[role=menu]');
+                    return root ? [...root.querySelectorAll('[role=menuitem]')].find((el) => h.label(el) === String(lbl)) : null;
+                };
+                let submenuPoked = false;
+                let firstSeenAt = 0;
+                let reported = false;
+                let lastOpenAt = 0;
+                const act = () => {
+                    if (reported) return true;
+                    // окно могли только что восстановить — ждём видимости документа
+                    if (document.visibilityState !== 'visible') {
+                        firstSeenAt = 0;
+                        return false;
+                    }
+                    // фокус окна закрывает меню — переоткрываем с рейт-лимитом
+                    if (!document.querySelector('[role=menu]')) {
+                        if (Date.now() - lastOpenAt > 800) {
+                            lastOpenAt = Date.now();
+                            window.pulsesyncApi.openTrackMenu();
+                        }
+                        firstSeenAt = 0;
+                        return false;
+                    }
+                    // вложенный пункт: сначала раскрываем сабменю родителя
+                    if (parentLabel && !submenuPoked) {
+                        const parent = findTop(parentLabel);
+                        if (parent) {
+                            h.hover(parent);
+                            submenuPoked = true;
+                        }
+                        return false;
+                    }
+                    const hit = findEverywhere()[0];
+                    if (!hit) {
+                        firstSeenAt = 0;
+                        return false;
+                    }
+                    // пункт должен провисеть на месте: после репрайза меню анимируется
+                    if (!firstSeenAt) {
+                        firstSeenAt = Date.now();
+                        return false;
+                    }
+                    if (Date.now() - firstSeenAt < 120) return false;
+                    reported = true;
+                    h.hover(hit);
+                    window.setTimeout(() => {
+                        const hit2 = findEverywhere()[0];
+                        if (hit2) h.fire(hit2);
+                        // чекбокс не закрывает меню сам — Radix держит его открытым,
+                        // и застрявшее меню ломает дальнейшие кражи; закрываем явно.
+                        // Обычные пункты закрывают меню сами — только снимаем скрытие.
+                        if (kind === 'toggle') {
+                            window.setTimeout(() => {
+                                for (const type of ['keydown', 'keyup']) {
+                                    document.dispatchEvent(new KeyboardEvent(type, { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }));
+                                }
+                                h.setHiddenSoon(450);
+                            }, 500);
+                        } else {
+                            h.setHiddenSoon(800);
+                        }
+                    }, 80);
+                    return true;
+                };
+
+                h.setHidden(true);
+                lastOpenAt = Date.now();
+                // меню обычно уже открыто кражей — повторный клик по «⋯» его ЗАКРЫЛ бы
+                if (!document.querySelector('[role=menu]')) {
+                    window.pulsesyncApi.openTrackMenu();
+                }
+                let tries = 0;
+                const timer = window.setInterval(() => {
+                    tries += 1;
+                    if (act() || tries > 45) {
+                        window.clearInterval(timer);
+                        // не оставляем скрытие даже если пункт не нашли/не нажали
+                        if (tries > 45) h.setHiddenSoon(300);
+                    }
+                }, 150);
+                return false;
+            },
+            // снять скрытие меню, не закрывая его (Escape прихлопнул бы диалог)
+            unhideTrackMenu: () => window.pulsesyncApi.__trackMenuHelpers().setHidden(false),
+closeTrackMenu: () => {
+                for (const type of ['keydown', 'keyup']) {
+                    document.dispatchEvent(new KeyboardEvent(type, { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }));
+                }
+                // с задержкой: мгновенный unhide показывал бы затухающее меню
+                window.pulsesyncApi.__trackMenuHelpers().setHiddenSoon(450);
+                // окно подавления новых кражей — иначе кража сразу после close
+                // отменяет setHiddenSoon и hider висит до 25с-страховки
+                window.__notchStealSuppressUntil = Date.now() + 1500;
+            },
+getState: () => getPlayerInstance()?.state,
             isPlaying: () => getPlayerInstance()?.state?.playerState?.status?.value === 'playing',
             getCurrentTrack: () => getPlayerInstance()?.state?.queueState?.currentEntity?.value?.entity?.entityData?.meta,
             getQueue: () => getPlayerInstance()?.state?.queueState?.entityList?.value,
@@ -2309,10 +2738,266 @@ window.findCssRuleByPartialName = function (pName) {
         });
     };
 
+    // Приложение пушит PLAYER_STATE только при смене своих зависимостей — лайк
+    // при паузе доезжает только со следующим событием. Шлём лайк-стейт нотч-плееру
+    // сами, лёгким поллингом стора и отправкой только при изменении.
+    const startNotchLikeStatePolling = () => {
+        let last = null;
+        window.setInterval(() => {
+            const api = window.pulsesyncApi;
+            if (!api?.isTrackLiked) return;
+            const trackId = api.getCurrentTrack()?.id ?? null;
+            const next = {
+                trackId,
+                isLiked: api.isTrackLiked() === true,
+                isDisliked: api.isTrackDisliked() === true,
+            };
+            const changed = !last || last.isLiked !== next.isLiked || last.isDisliked !== next.isDisliked || last.trackId !== next.trackId;
+            if (changed) {
+                last = next;
+                window.desktopEvents?.send?.('NOTCH_LIKE_STATE', next);
+            }
+        }, 1000);
+    };
+
+    // 5.121: инстанс плеера больше не приходит из layout-чанка (чистый ваниль) —
+    // находим его сами обходом React-fiber: контекст-провайдер держит объект со
+    // state.queueState/playerState. Берём кандидата с непустой очередью — в дереве
+    // есть пустые саб-плееры (audioAdvertPlayback). Инстанс — синглтон, хватит раз.
+    const acquirePlayerInstance = () => {
+        if (window.pulsesyncApi?.playerInstance) return true;
+        try {
+            // якорь — первая кнопка С React-fiber ключом: смонтированный нами
+            // тайтлбар-ряд тоже состоит из button и попадает в querySelector первым
+            let el = null;
+            for (const b of document.querySelectorAll('button')) {
+                if (Object.keys(b).some((k) => k.startsWith('__reactFiber$'))) {
+                    el = b;
+                    break;
+                }
+            }
+            if (!el) return false;
+            const fk = Object.keys(el).find((k) => k.startsWith('__reactFiber$'));
+            let node = el[fk];
+            while (node && node.return) node = node.return;
+            const seen = new Set();
+            let best = null;
+            const isPlayer = (o) => {
+                try {
+                    return !!(o && o.state && o.state.queueState && o.state.playerState);
+                } catch {
+                    return false;
+                }
+            };
+            const hasQueue = (o) => {
+                const qs = o.state.queueState;
+                return !!(qs.currentEntity && qs.currentEntity.value) || (Array.isArray(qs.entityList?.value) && qs.entityList.value.length > 0);
+            };
+            const deep = (o, d) => {
+                if (!o || typeof o !== 'object' || d > 3 || best) return;
+                // рут-стор: тут живут library (лайки 5.121) и user (uid)
+                if (!window.__pulseStore && o.library && o.user && o.fullscreenPlayer) {
+                    window.__pulseStore = o;
+                }
+                if (isPlayer(o)) {
+                    if (hasQueue(o)) best = o;
+                    return;
+                }
+                for (const k of Object.keys(o).slice(0, 60)) {
+                    try {
+                        deep(o[k], d + 1);
+                    } catch {}
+                }
+            };
+            const walk = (fiber) => {
+                if (!fiber || best || seen.has(fiber)) return;
+                seen.add(fiber);
+                if (fiber.memoizedProps && typeof fiber.memoizedProps.value === 'object') deep(fiber.memoizedProps.value, 0);
+                walk(fiber.child);
+                walk(fiber.sibling);
+            };
+            walk(node);
+            if (best) {
+                window.pulsesyncApi.setPlayerInstance(best);
+                return true;
+            }
+        } catch {}
+        return false;
+    };
+
+    // 5.121: ванильный PLAYER_STATE доезжает до main без трека/прогресса —
+    // читаем стор плеера прямо здесь (main world) и шлём полный стейт нотчу.
+    // executeJavaScript из main-процесса на этом окне не резолвится — только так.
+    const startNotchTrackStatePolling = () => {
+        // ретраи без капа: очередь может появиться много позже старта (плеер молчит)
+        window.setInterval(() => {
+            acquirePlayerInstance();
+        }, 2000);
+        acquirePlayerInstance();
+        let lastKey = '';
+        let lastSentAt = 0;
+        let lastTrack = null;
+        window.setInterval(() => {
+            const api = window.pulsesyncApi;
+            const meta = api?.getCurrentTrack?.();
+            const ps = api.playerInstance?.state?.playerState;
+            // после переходов (артист/альбом) стор на секунды пустеет: meta/status null.
+            // Не замолкаем: статус шлём всегда (по нему нотч честно гасит эквалайзер),
+            // трек держим последний — очередь обычно возвращается сама
+            const isPlaying = ps?.status?.value === 'playing';
+            let track = null;
+            if (meta?.title) {
+                const album = Array.isArray(meta.albums) ? meta.albums[0] : undefined;
+                const trackId = meta.id != null ? String(meta.id) : '';
+                const albumId = album?.id != null ? String(album.id) : '';
+                track = {
+                    title: meta.title,
+                    artists: Array.isArray(meta.artists)
+                        ? meta.artists.map((a) => ({ name: a.name, id: a.id != null ? String(a.id) : null }))
+                        : [],
+                    // составной id — нотч режет его на trackId:albumId для переходов
+                    id: trackId && albumId ? `${trackId}:${albumId}` : trackId,
+                    albumId,
+                    albums: album ? [{ id: albumId, title: album.title }] : [],
+                    album: { id: albumId, title: album.title },
+                    coverUri: meta.coverUri || album?.coverUri || '',
+                    durationMs: meta.durationMs ?? (meta.duration ? meta.duration * 1000 : undefined),
+                    contentWarning: meta.contentWarning,
+                };
+                lastTrack = track;
+            } else {
+                track = lastTrack;
+            }
+            // прогресс — сигнальный объект {position, duration} в секундах
+            const progressValue = ps?.progress?.value;
+            const position = Math.max(0, Number(progressValue?.position) || 0);
+            const duration = Math.max(0, Number(progressValue?.duration) || 0) || (track?.durationMs ? track.durationMs / 1000 : 0);
+            // реальная громкость плеера — exponentVolume (volume бывает 0 при мьюте контекста)
+            const volume = Math.min(1, Math.max(0, Number(ps?.exponentVolume?.value ?? ps?.volume?.value) || 0));
+            const trackId = track?.id ?? '';
+            // таскбару (thumbar/превью) нужны repeat/shuffle/лайки — их в ванильном
+            // PLAYER_STATE 5.121 нет; везём из стора здесь, main досинтезирует availableActions
+            const qs = api.playerInstance?.state?.queueState;
+            const repeat = qs?.repeat?.value ?? 'none';
+            const shuffle = qs?.shuffle?.value === true;
+            const isLiked = api.isTrackLiked?.() === true;
+            const isDisliked = api.isTrackDisliked?.() === true;
+            // пока играет — позиция тикает каждый тик; на паузе шлём только изменения
+            const key = `${trackId}|${isPlaying}|${Math.round(volume * 100)}|${Math.floor(position)}|${repeat}|${shuffle}|${isLiked}|${isDisliked}`;
+            // heartbeat раз в 3с: ванильные события в main не должны пересиливать
+            // поллер дольше этого окна
+            const now = Date.now();
+            if (key === lastKey && now - lastSentAt < 3000) return;
+            lastKey = key;
+            lastSentAt = now;
+            window.desktopEvents?.send?.('NOTCH_TRACK_STATE', { isPlaying, track, progress: { position, duration }, volume, repeat, shuffle, isLiked, isDisliked });
+        }, 1000);
+    };
+
+    // 5.121: обработчик PLAYER_ACTION жил в мод-врезке layout-чанка (5.120) —
+    // ванильный layout его не имеет, транспорт нотча/мини-плеера мёртв без него.
+    // Регистрируем здесь: транспорт, громкость, прогресс, лайки.
+    const registerPlayerActionHandler = () => {
+        window.desktopEvents?.on?.('PLAYER_ACTION', (_event, action, value, nonce) => {
+            try {
+                if (window.playerActionEventDedupeNonce === nonce) return;
+                if (nonce) window.playerActionEventDedupeNonce = nonce;
+                const api = window.pulsesyncApi;
+                const inst = api?.playerInstance;
+                switch (action) {
+                    case 'PLAY':
+                    case 'PAUSE':
+                    case 'TOGGLE_PLAY':
+                        inst?.togglePause?.();
+                        break;
+                    case 'MOVE_BACKWARD':
+                        inst?.moveBackward?.();
+                        break;
+                    case 'MOVE_FORWARD':
+                        inst?.moveForward?.();
+                        break;
+                    case 'REPEAT_NONE':
+                        inst?.setRepeatMode?.('none');
+                        break;
+                    case 'REPEAT_CONTEXT':
+                        inst?.setRepeatMode?.('context');
+                        break;
+                    case 'REPEAT_ONE':
+                        inst?.setRepeatMode?.('one');
+                        break;
+                    case 'TOGGLE_REPEAT': {
+                        let next = 'none';
+                        switch (inst?.state?.queueState?.repeat?.value) {
+                            case 'none':
+                                next = 'vibe' === inst?.state?.currentContext?.value?.contextData?.type ? 'one' : 'context';
+                                break;
+                            case 'context':
+                                next = 'one';
+                                break;
+                            default:
+                                next = 'none';
+                        }
+                        inst?.setRepeatMode?.(next);
+                        break;
+                    }
+                    case 'TOGGLE_SHUFFLE':
+                        inst?.toggleShuffle?.();
+                        break;
+                    case 'TOGGLE_LIKE':
+                    case 'LIKE':
+                        if (api?.isTrackLiked?.()) api?.unlikeTrack?.();
+                        else api?.likeTrack?.();
+                        break;
+                    case 'LIKE_NONE':
+                        api?.unlikeTrack?.();
+                        break;
+                    case 'TOGGLE_DISLIKE':
+                        if (api?.isTrackDisliked?.()) api?.undislikeTrack?.();
+                        else api?.dislikeTrack?.();
+                        break;
+                    case 'DISLIKE':
+                        api?.dislikeTrack?.();
+                        break;
+                    case 'DISLIKE_NONE':
+                        api?.undislikeTrack?.();
+                        break;
+                    case 'INCREASE_VOLUME':
+                        inst?.increaseExponentVolume?.(Number(value) > 0 ? Number(value) : 0.05);
+                        break;
+                    case 'DECREASE_VOLUME':
+                        inst?.decreaseExponentVolume?.(Number(value) > 0 ? Number(value) : 0.05);
+                        break;
+                    case 'SET_VOLUME': {
+                        // нотч/мини-плеер шлют 0..1; глобальные шорткаты могут 0..100
+                        const raw = Number(value) || 0;
+                        inst?.setExponentVolume?.(Math.min(Math.max(raw > 1 ? raw / 100 : raw, 0), 1));
+                        break;
+                    }
+                    case 'SET_PROGRESS':
+                        inst?.setProgress?.(Math.max(Number(value) || 0, 0));
+                        break;
+                }
+            } catch {}
+        });
+    };
+
+    const ensureTitlebarSpacing = () => {
+        if (window.PLATFORM !== 'darwin') return;
+        if (document.getElementById('pulsesync-titlebar-spacing')) return;
+        const st = document.createElement('style');
+        st.id = 'pulsesync-titlebar-spacing';
+        st.textContent = '[class*="CommonLayout_root"] { padding-top: 32px !important; }';
+        (document.head || document.documentElement).appendChild(st);
+    };
+
     ensurePulseSyncTrackQualityApi();
     installNativeAudioOutputGainMuteMonitor();
     installYaspNativeAudioHooks();
     ensureApi();
     registerDesktopListener();
     requestInitialAddonSettingsSnapshot();
+    registerPlayerActionHandler();
+    ensureTitlebarSpacing();
+    startNotchLikeStatePolling();
+    startNotchTrackStatePolling();
 })();

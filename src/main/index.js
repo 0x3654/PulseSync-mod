@@ -157,14 +157,19 @@ const MiniPlayer = miniPlayer_js_1.getMiniPlayer();
     if ([platform_js_1.Platform.WINDOWS, platform_js_1.Platform.LINUX].includes(deviceInfo_js_1.devicePlatform)) {
         (0, customTitleBar_js_1.createCustomTitleBar)(window);
     }
-    if (store_js_1.getModSettings()?.appAutoUpdates.enableAppAutoUpdate ?? config_js_1.config.app.enableAutoUpdate) {
+    // fork: тост о новой версии клиента включён по умолчанию, установка — только
+    // через осознанный диалог (перехват INSTALL_UPDATE в events.js), тихой сноски мода нет
+    if (store_js_1.getModSettings()?.appAutoUpdates.enableUpdateNotifications ?? true) {
         updater.start();
         updater.onUpdate((version) => {
             (0, events_js_1.sendUpdateAvailable)(window, version);
         });
     }
     modUpdater.onUpdateAvailable((currVersion, newVersion) => {
-        (0, events_js_1.sendModUpdateAvailable)(window, currVersion, newVersion);
+        // 122-форк: не показывать плашку upstream-обновления — установка всё равно
+        // выключена (events.js), а плашка сбивает с толку и откатывает порт
+        eventsLogger.info(`Mod update ${newVersion} available upstream — suppressed (fork build)`);
+        if (false) (0, events_js_1.sendModUpdateAvailable)(window, currVersion, newVersion);
         let callback = (progressRenderer, progressWindow) => {
             events_js_1.sendProgressBarChange(window, 'modUpdateToast', progressRenderer * 100);
             window.setProgressBar(progressWindow);

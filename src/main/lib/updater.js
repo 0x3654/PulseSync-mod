@@ -41,8 +41,13 @@ class Updater {
             this.logger.log('Update downloaded', updateInfo.version);
             if (isVersionDeprecated()) {
                 this.logger.info('This version is deprecated', electron_1.app.getVersion(), config_js_1.config.common.DEPRECATED_VERSIONS);
-                this.install();
-                return;
+                // fork: принудительная авто-установка деприкации — только с явным
+                // enableAppAutoUpdate; иначе уведомляем как обычное обновление
+                // (тихая сноска мода недопустима, см. перехват INSTALL_UPDATE)
+                if (store_js_1.getModSettings()?.appAutoUpdates.enableAppAutoUpdate === true) {
+                    this.install();
+                    return;
+                }
             }
             this.latestAvailableVersion = updateInfo.version;
             this.onUpdateListeners.forEach((listener) => {
