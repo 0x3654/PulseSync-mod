@@ -1194,16 +1194,14 @@ const handleApplicationEvents = (window) => {
     electron_1.ipcMain.on(events_js_1.Events.DOWNLOAD_MOD_UPDATE, async (event, data) => {
         eventsLogger.info(`Event received`, events_js_1.Events.DOWNLOAD_MOD_UPDATE);
 
-        let callback = (progressRenderer, progressWindow) => {
-            sendProgressBarChange(window, 'modUpdateToast', progressRenderer * 100);
-            window.setProgressBar(progressWindow);
-        };
-        await (0, modUpdater_js_1.getModUpdater)().onUpdateDownload(throttle(callback, PROGRESS_BAR_THROTTLE_MS));
+        // 122-форк: канал мод-апдейтера смотрит на upstream PulseSync (сборки под
+        // старые версии ЯМ) — «обновление» откатывает порт. Пока нет своего канала,
+        // скачивание/установка мод-обновлений выключены на корню.
+        eventsLogger.warn('DOWNLOAD_MOD_UPDATE ignored: upstream mod update channel disabled for this fork build');
     });
 
     electron_1.ipcMain.on(events_js_1.Events.INSTALL_MOD_UPDATE, async (event, data) => {
-        eventsLogger.info(`Event received`, events_js_1.Events.INSTALL_MOD_UPDATE);
-        await (0, modUpdater_js_1.getModUpdater)().onInstallUpdate();
+        eventsLogger.warn('INSTALL_MOD_UPDATE ignored: upstream mod update channel disabled for this fork build');
     });
 
     const setNativeStoreValue = (key, value) => {

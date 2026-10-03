@@ -166,7 +166,10 @@ const MiniPlayer = miniPlayer_js_1.getMiniPlayer();
         });
     }
     modUpdater.onUpdateAvailable((currVersion, newVersion) => {
-        (0, events_js_1.sendModUpdateAvailable)(window, currVersion, newVersion);
+        // 122-форк: не показывать плашку upstream-обновления — установка всё равно
+        // выключена (events.js), а плашка сбивает с толку и откатывает порт
+        eventsLogger.info(`Mod update ${newVersion} available upstream — suppressed (fork build)`);
+        if (false) (0, events_js_1.sendModUpdateAvailable)(window, currVersion, newVersion);
         let callback = (progressRenderer, progressWindow) => {
             events_js_1.sendProgressBarChange(window, 'modUpdateToast', progressRenderer * 100);
             window.setProgressBar(progressWindow);
