@@ -240,6 +240,9 @@ const init = () => {
             // fork: app auto-update off by default — a Yandex client update would wipe the mod
             enableAppAutoUpdate: store.get(store_js_1.StoreKeys.AUTO_UPDATES) ?? false,
             enableAppAutoUpdateByProbability: false,
+            // fork: уведомлять о новых версиях клиента можно (тост), ставить — только
+            // осознанно через перехват INSTALL_UPDATE в events.js
+            enableUpdateNotifications: true,
             // fork: off by default — upstream release channel would clobber fork builds
             enableModAutoUpdate: false,
         },
